@@ -40,3 +40,5 @@ git-update.sh
 git-update.sh.debot
 
 .testing/
+
+.plan/

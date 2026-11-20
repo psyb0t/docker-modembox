@@ -1,7 +1,7 @@
 import asyncio
 import hmac
 from contextlib import asynccontextmanager, suppress
-from typing import Annotated
+from typing import Annotated, Literal
 from uuid import uuid4
 
 from fastapi import FastAPI, Query, Request, WebSocket, WebSocketDisconnect
@@ -13,9 +13,11 @@ from starlette.requests import HTTPConnection
 
 from .config import Config
 from .errors import OperationError
+from .hook_models import Destination, Preview, Rule
 from .mcp_tools import build_mcp
 from .media import FRAME_BYTES
 from .service import Service
+from .sms import MAX_SMS_CHARACTERS
 
 MAX_BODY = 1_048_576
 QUEUE_SIZE = 64
@@ -30,7 +32,7 @@ class Phone(Input):
 
 
 class Sms(Phone):
-    text: str = Field(min_length=1, max_length=70)
+    text: str = Field(min_length=1, max_length=MAX_SMS_CHARACTERS)
 
 
 class Pin(Input):
@@ -159,6 +161,38 @@ def create_app(config: Config | None = None, *, service: Service | None = None):
     @app.get("/v1/modems")
     async def modems():
         return [modem.state for modem in gateway.modems.values()]
+
+    @app.get("/v1/hooks/{resource}")
+    async def hook_page(
+        resource: Literal["rules", "destinations", "runs", "calls"],
+        limit: Annotated[int, Query(ge=1, le=200)] = 50,
+        offset: Annotated[int, Query(ge=0)] = 0,
+    ):
+        return gateway.hooks.page(resource, limit, offset)
+
+    @app.post("/v1/hooks/rules", status_code=201)
+    async def create_hook_rule(rule: Rule):
+        return gateway.hooks.save_rule(rule)
+
+    @app.put("/v1/hooks/rules/{key}")
+    async def replace_hook_rule(key: int, rule: Rule):
+        return gateway.hooks.save_rule(rule, key)
+
+    @app.post("/v1/hooks/destinations", status_code=201)
+    async def create_hook_destination(destination: Destination):
+        return gateway.hooks.save_destination(destination)
+
+    @app.put("/v1/hooks/destinations/{key}")
+    async def replace_hook_destination(key: int, destination: Destination):
+        return gateway.hooks.save_destination(destination, key)
+
+    @app.delete("/v1/hooks/{resource}/{key}")
+    async def delete_hook(resource: Literal["rules", "destinations"], key: int):
+        return gateway.hooks.remove(resource, key)
+
+    @app.post("/v1/hooks/preview")
+    async def preview_hook(preview: Preview):
+        return gateway.hooks.preview(preview)
 
     @app.get("/v1/messages")
     async def messages(

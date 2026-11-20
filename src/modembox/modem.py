@@ -1,16 +1,18 @@
 import asyncio
+import csv
 import hashlib
 import logging
 import re
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from time import monotonic
 
+from .call_history import IncomingCalls, classify_caller
 from .config import Device
 from .errors import OperationError
 from .media import Media, decode_clip
 from .profiles import GENERIC, identify
 from .serial_at import AT, Reply
-from .sms import PHONE, decode_deliver, encode_submit
+from .sms import PHONE, decode_deliver, encode_segments, service_center_time
 from .store import Store
 
 logger = logging.getLogger(__name__)
@@ -32,6 +34,11 @@ class Call:
     state: str
     direction: str
     peer: str
+    index: int = 0
+    caller_id: str = "unavailable"
+
+    def public(self):
+        return {"state": self.state, "direction": self.direction, "peer": self.peer}
 
 
 def parse_calls(reply: Reply) -> list[Call]:
@@ -39,23 +46,38 @@ def parse_calls(reply: Reply) -> list[Call]:
     for line in reply.lines:
         if not line.startswith("+CLCC:"):
             continue
-        items = line.partition(":")[2].split(",")
-        if len(items) < 5 or items[1].strip() not in {"0", "1"} or items[3].strip() != "0":
+        try:
+            items = next(csv.reader([line.partition(":")[2]], skipinitialspace=True, strict=True))
+        except csv.Error:
+            continue
+        if (
+            len(items) < 5
+            or not items[0].strip().isascii()
+            or not items[0].strip().isdigit()
+            or items[1].strip() not in {"0", "1"}
+            or items[3].strip() != "0"
+        ):
             continue
         state = items[2].strip()
         if not (state.isdigit() and int(state) < len(CALL_STATES)):
             continue
-        peer = items[5].strip().strip('"') if len(items) > 5 else ""
+        peer, caller_id = classify_caller(
+            items[5] if len(items) > 5 else "", items[9].strip() if len(items) > 9 else ""
+        )
         result.append(
             Call(
-                CALL_STATES[int(state)], "incoming" if items[1].strip() == "1" else "outgoing", peer
+                CALL_STATES[int(state)],
+                "incoming" if items[1].strip() == "1" else "outgoing",
+                peer,
+                int(items[0]),
+                caller_id,
             )
         )
     return result
 
 
 class Modem:
-    def __init__(self, device: Device, store: Store, publish, register):
+    def __init__(self, device: Device, store: Store, publish, register, call_writer=None):
         self.device = device
         self.store = store
         self.publish = publish
@@ -76,6 +98,8 @@ class Modem:
         self.ring = False
         self.sms_storages: set[str] = set()
         self.configured_ready = False
+        self.incoming = IncomingCalls(call_writer, lambda: self.id)
+        self.call_inventory = None
 
     @property
     def id(self) -> str:
@@ -101,6 +125,8 @@ class Modem:
             self.ring = True
         if line.startswith(("^CEND:", "^CONN:")) or line == "NO CARRIER":
             self.call_at = 0
+        if self.state["capabilities"].get("callStatus"):
+            self.incoming.signal(line)
 
     async def command(self, command, timeout=5, payload=None):
         if self.at is None or not self.at.port.is_open:
@@ -239,6 +265,7 @@ class Modem:
         sms = sms and stores.ok
         notifications = (await self.command("AT+CNMI=2,1,0,0,0")).ok if sms else False
         call_status = (await self.command("AT+CLCC")).ok
+        caller_id = (await self.command("AT+CLIP=1")).ok if call_status else False
         voice = "unknown"
         audio = False
         if self.profile.audio_probe:
@@ -256,6 +283,8 @@ class Modem:
                 "sms": sms,
                 "smsNotifications": notifications,
                 "callStatus": call_status,
+                "callerId": caller_id,
+                "decline": call_status and voice != "unsupported",
                 "voice": voice,
                 "audio": audio,
             }
@@ -299,43 +328,73 @@ class Modem:
                         self.id, scope, sms.sender, sms.body, sms.part, raw
                     )
                 else:
+                    try:
+                        timestamp = service_center_time(sms.stamp)
+                    except ValueError:
+                        timestamp = None
                     message = self.store.add_message(
-                        self.id, "incoming", sms.sender, sms.body, "received", scope.encode() + raw
+                        self.id,
+                        "incoming",
+                        sms.sender,
+                        sms.body,
+                        "received",
+                        scope.encode() + raw,
+                        timestamp=timestamp,
                     )
                 if message:
                     self.publish("message", message)
         self.sms_at = monotonic() + SMS_POLL
         self.sms_due = False
 
-    async def send(self, number: str, text: str):
+    async def send(self, number: str, text: str, *, automated=False):
+        if automated and self.state.get("sim") != "READY":
+            raise OperationError("SIM is not ready", "HOOK_DEFER")
         if not self.state["capabilities"].get("sms"):
             raise OperationError("SMS is unavailable")
         try:
-            payload = encode_submit(number, text)
+            payloads = encode_segments(number, text)
         except ValueError as error:
             raise OperationError(str(error), "INVALID_MESSAGE", 422) from error
-        if self.state["calls"]:
-            raise OperationError("SMS sending is paused during calls")
-        message = self.store.add_message(self.id, "outgoing", number, text, "sending")
-        self.publish("message", message)
-        try:
-            response = await self.command(
-                f"AT+CMGS={len(payload) - 1}", 45, payload.hex().upper().encode()
+        if self.state["calls"] or (automated and await self.calls()):
+            raise OperationError(
+                "SMS sending is paused during calls",
+                "HOOK_DEFER" if automated else "INVALID_OPERATION",
             )
-        except (OperationError, asyncio.CancelledError):
-            self.publish("message", self.store.update_message(message["id"], "unknown"))
-            raise
-        result = self.store.update_message(message["id"], "submitted" if response.ok else "failed")
+        message = self.store.add_outgoing(self.id, number, text, len(payloads))
+        self.publish("message", message)
+        for index, payload in enumerate(payloads, 1):
+            self.store.outgoing_part(message["id"], index, "sending")
+            try:
+                response = await self.command(
+                    f"AT+CMGS={len(payload) - 1}", 45, payload.hex().upper().encode()
+                )
+            except (OperationError, asyncio.CancelledError) as error:
+                result = self.store.outgoing_part(message["id"], index, "unknown", "unknown")
+                self.publish("message", result)
+                if automated and isinstance(error, OperationError):
+                    return result
+                raise
+            status = "submitted" if response.ok else "failed"
+            final = status if index == len(payloads) or not response.ok else None
+            if not response.ok and index > 1:
+                final = "partial"
+            result = self.store.outgoing_part(message["id"], index, status, final)
+            if not response.ok:
+                break
         self.publish("message", result)
         return result
 
     async def calls(self):
+        self.call_inventory = None
         if not self.state["capabilities"].get("callStatus"):
             return []
         reply = await self.command("AT+CLCC")
         if not reply.ok:
             return self.state["calls"]
-        calls = [asdict(call) for call in parse_calls(reply)]
+        records = parse_calls(reply)
+        self.call_inventory = sum(line.startswith("+CLCC:") for line in reply.lines)
+        self.incoming.sync(records)
+        calls = [call.public() for call in records]
         if not calls and monotonic() < self.dial_pending_until:
             self.call_at = monotonic() + 0.3
             return self.state["calls"]
@@ -379,7 +438,7 @@ class Modem:
             raise OperationError("Line already in use")
         await self.require(f"ATD{number};", "Modem rejected the call", 12)
         self.dial_pending_until = monotonic() + 3
-        self.put(calls=[asdict(Call("dialing", "outgoing", number))], mediaError=None)
+        self.put(calls=[Call("dialing", "outgoing", number).public()], mediaError=None)
         await self.prepare_audio()
         self.call_at = 0
         return self.state
@@ -399,6 +458,17 @@ class Modem:
         self.dial_pending_until = 0
         await self.calls()
         return self.state
+
+    async def decline(self, call_id):
+        await self.calls()
+        call = next((call for call in self.incoming.active.values() if call.id == call_id), None)
+        if call is None or call.state != "incoming":
+            raise OperationError("The incoming call is no longer ringing", "CALL_GONE", 409)
+        if not self.state["capabilities"].get("decline") or self.call_inventory != 1:
+            raise OperationError("This call cannot be declined safely", "DECLINE_UNAVAILABLE", 409)
+        await self.require("ATH", "Modem rejected decline")
+        call.declining = True
+        await self.calls()
 
     def media_required(self):
         if not self.media or not self.media.active:
@@ -474,6 +544,7 @@ class Modem:
             self.disconnect()
 
     def disconnect(self):
+        self.incoming.clear(interrupted=True)
         if self.media:
             self.media.close()
             self.media = None

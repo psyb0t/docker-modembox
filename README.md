@@ -7,6 +7,8 @@
 
 Plug a USB modem into a Linux box and run ModemBox. Send and read SMS, check the SIM and radio, and run AT commands from the browser, over HTTP, or through MCP. With supported hardware you can place and answer calls, listen, talk through the browser microphone, and play a WAV clip into the call.
 
+Use [SMS and call hooks](https://psyb0t.github.io/docker-modembox/hooks/) to forward messages, call webhooks, or decline calls that match a rule.
+
 Open a second browser and watch the same inbox, calls, and activity update live. A bearer token controls access by default. SQLite keeps the inbox and encrypted SIM PINs.
 
 ## Contents

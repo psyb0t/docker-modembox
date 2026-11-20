@@ -12,6 +12,7 @@ SMS_PART_WINDOW_SECONDS = 600
 
 class Store:
     def __init__(self, directory: Path):
+        self.on_sms = None
         directory.mkdir(mode=0o700, parents=True, exist_ok=True)
         path = directory / "pin.key"
         try:
@@ -49,8 +50,13 @@ class Store:
             CREATE INDEX IF NOT EXISTS pending_sms_parts
                 ON sms_parts (scope, peer, reference, total, coding)
                 WHERE message_id IS NULL;
+            CREATE TABLE IF NOT EXISTS sms_outgoing_parts (
+                message_id INTEGER NOT NULL, part INTEGER NOT NULL, status TEXT NOT NULL,
+                PRIMARY KEY (message_id, part)
+            );
         """)
         with self.db:
+            self.db.execute("UPDATE sms_outgoing_parts SET status='unknown' WHERE status='sending'")
             self.db.execute("UPDATE messages SET status='unknown' WHERE status='sending'")
 
     def get_pin(self, sim: str) -> str | None:
@@ -73,7 +79,7 @@ class Store:
         with self.db:
             self.db.execute("DELETE FROM pins WHERE sim=?", (sim,))
 
-    def add_message(self, modem, direction, peer, body, status, raw=None):
+    def add_message(self, modem, direction, peer, body, status, raw=None, *, timestamp=None):
         fingerprint = hashlib.sha256(raw).hexdigest() if raw else None
         with self.db:
             result = self.db.execute(
@@ -83,6 +89,8 @@ class Store:
                 """,
                 (modem, direction, peer, body, status, fingerprint),
             )
+            if result.rowcount and direction == "incoming" and self.on_sms:
+                self.on_sms(self.message(result.lastrowid), timestamp)
         return self.message(result.lastrowid) if result.rowcount else None
 
     def update_message(self, message_id: int, status: str):
@@ -140,7 +148,7 @@ class Store:
             )
             parts = self.db.execute(
                 """
-                SELECT part.body, legacy.id AS legacy_id
+                SELECT part.body, part.stamp, legacy.id AS legacy_id
                 FROM sms_parts AS part
                 LEFT JOIN messages AS legacy ON legacy.fingerprint = part.fingerprint
                 WHERE part.group_key = ?
@@ -162,7 +170,9 @@ class Store:
                 "UPDATE sms_parts SET message_id = ? WHERE group_key = ?",
                 (message_id, group_key),
             )
-        message = self.message(message_id)
+            message = self.message(message_id)
+            if self.on_sms and not any(row["legacy_id"] is not None for row in parts):
+                self.on_sms(message, min(row["stamp"] for row in parts))
         replaces = [row["legacy_id"] for row in parts if row["legacy_id"] is not None]
         if replaces:
             message["replaces"] = replaces
@@ -173,7 +183,48 @@ class Store:
             "SELECT id,modem,direction,peer,body,status,created FROM messages WHERE id=?",
             (message_id,),
         ).fetchone()
-        return dict(row) if row else None
+        if row is None:
+            return None
+        result = dict(row)
+        if result["direction"] == "outgoing" and (parts := self.outgoing_parts(message_id)):
+            result["parts"] = parts
+        return result
+
+    def add_outgoing(self, modem, number, text, count):
+        with self.db:
+            result = self.db.execute(
+                """INSERT INTO messages (modem,direction,peer,body,status)
+                   VALUES (?,'outgoing',?,?,'sending')""",
+                (modem, number, text),
+            )
+            if count > 1:
+                self.db.executemany(
+                    """INSERT INTO sms_outgoing_parts(message_id,part,status)
+                       VALUES (?,?,'pending')""",
+                    [(result.lastrowid, index) for index in range(1, count + 1)],
+                )
+        return self.message(result.lastrowid)
+
+    def outgoing_part(self, message_id, part, status, message_status=None):
+        with self.db:
+            self.db.execute(
+                "UPDATE sms_outgoing_parts SET status=? WHERE message_id=? AND part=?",
+                (status, message_id, part),
+            )
+            if message_status:
+                self.db.execute(
+                    "UPDATE messages SET status=? WHERE id=?", (message_status, message_id)
+                )
+        return self.message(message_id)
+
+    def outgoing_parts(self, message_id):
+        return [
+            dict(row)
+            for row in self.db.execute(
+                "SELECT part,status FROM sms_outgoing_parts WHERE message_id=? ORDER BY part",
+                (message_id,),
+            )
+        ]
 
     def messages(self, modem: str | None = None, before: int | None = None, limit: int = 100):
         rows = self.db.execute(

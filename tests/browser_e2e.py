@@ -32,16 +32,11 @@ class Browser:
             time.sleep(0.2)
         raise AssertionError(f"Could not find {needles!r} in {text!r}")
 
-    def elements(self):
-        return self.action("get_interactive_elements")["elements"]
-
     def click(self, title):
-        element = next(item for item in self.elements() if item["text"] == title)
-        self.action("system_click", **{key: element[key] for key in ("x", "y", "w", "h")})
+        self.action("click", selector=f'xpath=//button[normalize-space(.)="{title}"]')
 
-    def paste(self, index, text):
-        element = [item for item in self.elements() if item["tag"] in {"input", "textarea"}][index]
-        self.action("paste_text", text=text, **{key: element[key] for key in ("x", "y", "w", "h")})
+    def fill(self, selector, text):
+        self.action("fill", selector=selector, value=text)
 
     def check_page(self):
         assert self.action("detect_challenge")["status"] == "absent"
@@ -70,13 +65,13 @@ def test_static_console_sms_and_call():
         browser.action("goto", url=APP_URL)
         browser.check_page()
         browser.wait("Connect to ModemBox")
-        browser.paste(0, "EXAMPLE-DO-NOT-USE-wrong")
+        browser.fill(".login input", "EXAMPLE-DO-NOT-USE-wrong")
         browser.click("Connect")
         browser.check_page()
         rejected = browser.wait("Token rejected")
         assert "Example received text" not in rejected
 
-        browser.paste(0, TOKEN)
+        browser.fill(".login input", TOKEN)
         browser.click("Connect")
         browser.check_page()
         initial = browser.wait(
@@ -88,15 +83,15 @@ def test_static_console_sms_and_call():
         browser.click("Selected modem")
         assert "Example archived text" not in browser.wait("All modems", "Example received text")
 
-        browser.paste(3, NUMBER)
-        browser.paste(4, MESSAGE)
+        browser.fill(".compose input[type=tel]", NUMBER)
+        browser.fill(".compose textarea", MESSAGE)
         browser.click("Send SMS")
         browser.check_page()
         browser.wait(MESSAGE, "http send sms ok")
         messages = gateway.get("/v1/messages").json()["items"]
         assert any(item["body"] == MESSAGE and item["status"] == "submitted" for item in messages)
 
-        browser.paste(0, NUMBER)
+        browser.fill("form:not(.compose) input[type=tel]", NUMBER)
         browser.click("Dial")
         browser.check_page()
         browser.wait(NUMBER, "active", "Hang up", "http dial ok")
@@ -110,3 +105,29 @@ def test_static_console_sms_and_call():
         browser.action("send_key", key="ctrl+r")
         browser.check_page()
         browser.wait("Idle", MESSAGE, "http hangup ok")
+
+        browser.click("Hooks")
+        browser.wait("Hooks", "No rules yet.")
+        browser.click("New rule")
+        browser.wait("Rule name", "SMS template", "Dry run")
+        browser.fill('section[aria-label="Hooks"] form input[required]', "Browser forwarding rule")
+        browser.click("Save rule")
+        browser.wait("Browser forwarding rule", "Enabled")
+        assert (
+            gateway.get("/v1/hooks/rules").json()["items"][0]["name"] == "Browser forwarding rule"
+        )
+
+        response = gateway.post(
+            "/v1/hooks/rules",
+            json={
+                "name": "API call rule",
+                "trigger": "call.incoming",
+                "actions": [{"type": "decline"}],
+            },
+        )
+        assert response.status_code == 201
+        browser.wait("API call rule", "Browser forwarding rule")
+        browser.action("send_key", key="ctrl+r")
+        browser.wait("Idle", "Live")
+        browser.click("Hooks")
+        browser.wait("API call rule", "Browser forwarding rule")

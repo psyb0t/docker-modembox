@@ -32,3 +32,5 @@ Use a different integration for devices that are outside the configured ModemBox
 ## Operations
 
 Call `list_modems` first. Use `list_sms` with the oldest returned ID as `before` to page. After `dial`, poll for the active call state before `play_audio` or `capture_audio`. Finish with `hangup` when the workflow is done. See [setup](references/setup.md) for transport and audio formats.
+
+For SMS or call automation, use `preview_hook` with a stored SMS or call before enabling a rule. Use `list_hooks` with `resource: runs` to check deliveries. Create or enable rules that send SMS, forward data to a webhook, or decline calls only with the operator's authorization.

@@ -77,6 +77,8 @@ class Emulator:
             self.unlocked = True
         elif command == "ATD+1234567890;":
             self.state = '+CLCC: 1,0,0,0,0,"+1234567890",145'
+        elif command == "ATA":
+            self.state = self.state.replace("+CLCC: 1,1,4,", "+CLCC: 1,1,0,", 1)
         elif command == "ATH":
             self.state = ""
         return ("\r\n" + outputs.get(command, "") + "\r\nOK\r\n").encode()
@@ -96,6 +98,7 @@ class Emulator:
                     os.write(self.master, b"\r\n+CMGS: 11\r\nOK\r\n")
                     awaiting_sms = False
                 elif text.startswith("AT+CMGS="):
+                    self.commands.append(text)
                     os.write(self.master, b"\r\n> ")
                     awaiting_sms = True
                 elif text:

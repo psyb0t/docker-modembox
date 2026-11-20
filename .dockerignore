@@ -18,3 +18,5 @@ web/build
 sec.sarif
 git-update.sh
 git-update.sh.debot
+
+.plan/

@@ -1,11 +1,13 @@
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 from pydantic import Field
 
 from .errors import OperationError
+from .hook_models import Destination, Preview, Rule
 from .service import Service
+from .sms import MAX_SMS_CHARACTERS
 
 
 def build_mcp(service: Service) -> FastMCP:
@@ -40,9 +42,57 @@ def build_mcp(service: Service) -> FastMCP:
         return message
 
     @mcp.tool
-    async def send_sms(modem_id: str, number: str, text: str) -> dict:
-        """Submit one SMS to a phone number. A submitted status does not mean delivered."""
+    async def send_sms(
+        modem_id: str,
+        number: str,
+        text: Annotated[str, Field(min_length=1, max_length=MAX_SMS_CHARACTERS)],
+    ) -> dict:
+        """Submit SMS to a phone number. Submitted means the modem accepted the SMS."""
         return await act(modem_id, "send_sms", number=number, text=text)
+
+    @mcp.tool
+    async def list_hooks(
+        resource: Literal["rules", "destinations", "runs", "calls"],
+        limit: Annotated[int, Field(ge=1, le=200)] = 50,
+        offset: Annotated[int, Field(ge=0)] = 0,
+    ) -> dict:
+        """List automation rules, webhook destinations, deliveries, or incoming call history."""
+        return service.hooks.page(resource, limit, offset)
+
+    @mcp.tool
+    async def save_hook_rule(rule: Rule, rule_id: int | None = None) -> dict:
+        """Create a hook rule or replace the rule with this ID."""
+        try:
+            return service.hooks.save_rule(rule, rule_id)
+        except OperationError as error:
+            raise ToolError(str(error)) from error
+
+    @mcp.tool
+    async def save_hook_destination(
+        destination: Destination,
+        destination_id: int | None = None,
+    ) -> dict:
+        """Create or replace a webhook destination. Credentials are write-only."""
+        try:
+            return service.hooks.save_destination(destination, destination_id)
+        except OperationError as error:
+            raise ToolError(str(error)) from error
+
+    @mcp.tool
+    async def delete_hook(resource: Literal["rules", "destinations"], id: int) -> dict:
+        """Delete a hook rule or destination and cancel its queued actions."""
+        try:
+            return service.hooks.remove(resource, id)
+        except OperationError as error:
+            raise ToolError(str(error)) from error
+
+    @mcp.tool
+    async def preview_hook(preview: Preview) -> dict:
+        """Match a draft rule against an existing SMS or call without sending or declining."""
+        try:
+            return service.hooks.preview(preview)
+        except OperationError as error:
+            raise ToolError(str(error)) from error
 
     @mcp.tool
     async def unlock_sim(modem_id: str, pin: str, remember: bool = False) -> dict:

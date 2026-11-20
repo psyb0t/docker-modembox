@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.0
+
+- Add rules that match incoming SMS or calls, then forward or reply by SMS, send HTTP webhooks, or decline the ringing call.
+- Manage rules and webhook destinations through the web console, REST API or MCP. Preview rules without sending anything, and view call history and delivery results.
+- Send long SMS in multiple parts and record each part's submission status.
+- Create the new SQLite tables at startup. Existing inboxes and saved SIM PINs work without a manual migration.
+
 ## 0.1.1
 
 - Add the Docker image label the MCP Registry requires to verify package ownership.

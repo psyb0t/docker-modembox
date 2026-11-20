@@ -27,6 +27,13 @@ Protected REST and MCP calls require an Authorization bearer header by default. 
 | DELETE /v1/modems/{id}/audio | Stop WAV playback |
 | POST /v1/modems/{id}/at | command, a single allowed AT command |
 | POST /mcp | MCP Streamable HTTP |
+| GET /v1/hooks/{resource} | List rules, destinations, runs, or calls with `limit` and `offset`. Returns `items`, `limit`, `offset`, and `hasMore` |
+| POST /v1/hooks/rules | Create a rule with name, trigger, modem, match, conditions and actions |
+| PUT /v1/hooks/rules/{id} | Replace a rule, including its enabled state |
+| POST /v1/hooks/destinations | Create an HTTP destination |
+| PUT /v1/hooks/destinations/{id} | Replace an HTTP destination |
+| DELETE /v1/hooks/{resource}/{id} | Delete a rule or destination and cancel queued actions |
+| POST /v1/hooks/preview | Preview a draft `rule` against one `messageId` or `callId` |
 
 See [MCP and agent integrations](mcp.md) for the tool list. Read-only AT commands are allowlisted. Raw writes require an operator opt-in and are unavailable during a call.
 
@@ -39,5 +46,7 @@ REST failures return a stable code and message. Validate the SMS result before r
 /v1/events sends a snapshot with modems, messages and activity before sending modem, message and activity events. Sequence numbers increase in one running service. Reconnect for a fresh snapshot. Slow clients can receive a replacement snapshot.
 
 A `message` event can include `replaces`, the IDs of old fragment rows to remove from the inbox when a multipart SMS is joined.
+
+The snapshot includes `hooks` with `rules`, `destinations`, `runs`, and `calls`. Live events of type `hook.rules`, `hook.destinations`, `hook.runs`, and `hook.calls` replace the row with the same ID. Rule and destination deletions carry `deleted: true`. See the [hooks guide](hooks.md) for event payloads and delivery behavior.
 
 /v1/modems/{id}/audio/ws sends binary 20 ms PCM frames during a call. Listening clients get caller audio. One browser at a time can request the microphone with mic:on and release it with mic:off. Send PCM16 mono 8 kHz in 320-byte frames. WAV playback takes precedence over queued microphone frames. Caller audio stays in a short in-memory buffer for capture.

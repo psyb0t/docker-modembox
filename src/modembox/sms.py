@@ -1,5 +1,6 @@
 import re
 from datetime import datetime, timedelta, timezone
+from secrets import token_bytes
 from typing import NamedTuple
 
 GSM7 = (
@@ -21,6 +22,9 @@ GSM7_EXTENSIONS = {
 }
 PHONE = re.compile(r"\+?[0-9]{3,20}")
 CONCAT_REFERENCE_BYTES = {0x00: 1, 0x08: 2}
+SMS_PAYLOAD_BYTES = 140
+MULTIPART_HEADER_BYTES = 7
+MAX_SMS_CHARACTERS = 16830
 
 
 class SmsPart(NamedTuple):
@@ -115,17 +119,44 @@ def decode_deliver(pdu: bytes) -> Deliver:
 
 
 def encode_submit(number: str, text: str) -> bytes:
+    payload = text.encode("utf-16-be")
+    if not 1 <= len(payload) <= SMS_PAYLOAD_BYTES:
+        raise ValueError("Message must fit one SMS (70 UTF-16 units)")
+    return submit_pdu(number, payload)
+
+
+def submit_pdu(number: str, payload: bytes, header: bytes = b"") -> bytes:
     if not PHONE.fullmatch(number):
         raise ValueError("Invalid phone number")
     digits = number.lstrip("+")
     padded = digits + ("f" if len(digits) % 2 else "")
     encoded = bytes.fromhex("".join(padded[i : i + 2][::-1] for i in range(0, len(padded), 2)))
-    payload = text.encode("utf-16-be")
-    if not 1 <= len(payload) <= 140:
-        raise ValueError("Message must fit one SMS (70 UTF-16 units)")
     return (
-        bytes((0, 1, 0, len(digits), 145 if number.startswith("+") else 129))
+        bytes((0, 0x41 if header else 1, 0, len(digits), 145 if number.startswith("+") else 129))
         + encoded
-        + bytes((0, 8, len(payload)))
+        + bytes((0, 8, len(header) + len(payload)))
+        + header
         + payload
     )
+
+
+def encode_segments(number: str, text: str) -> list[bytes]:
+    payload = text.encode("utf-16-be")
+    if len(payload) <= SMS_PAYLOAD_BYTES:
+        return [encode_submit(number, text)]
+    parts = []
+    current = bytearray()
+    for character in text:
+        data = character.encode("utf-16-be")
+        if len(current) + len(data) > SMS_PAYLOAD_BYTES - MULTIPART_HEADER_BYTES:
+            parts.append(bytes(current))
+            current.clear()
+        current.extend(data)
+    parts.append(bytes(current))
+    if len(parts) > 255:
+        raise ValueError("Message exceeds 255 SMS segments")
+    reference = token_bytes(2)
+    return [
+        submit_pdu(number, part, bytes((6, 0x08, 4)) + reference + bytes((len(parts), index)))
+        for index, part in enumerate(parts, 1)
+    ]

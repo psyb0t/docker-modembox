@@ -1,5 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import Hooks from "./Hooks.svelte";
+  import { emptyHooks, type HookState } from "./hooks";
 
   type Call = {state: string; direction: string; peer: string};
   type Device = {id: string; connected: boolean; model?: string; manufacturer?: string; firmware?: string;
@@ -17,6 +19,8 @@
   let smsNumber = "", smsText = "", dialNumber = "", pin = "", remember = false, command = "AT+CSQ";
   let atReply = "", busy = false, filter = "all", older = true;
   let allModemMessages = false;
+  let hooks = emptyHooks;
+  let screen: "console" | "hooks" = "console";
   let events: WebSocket | undefined, audio: WebSocket | undefined;
   let reconnect: ReturnType<typeof setTimeout> | undefined;
   let context: AudioContext | undefined, microphone: MediaStream | undefined;
@@ -52,6 +56,7 @@
         devices = frame.data.modems;
         messages = frame.data.messages;
         activity = frame.data.activity;
+        hooks = frame.data.hooks ?? emptyHooks;
         connection = "Live";
       } else if (frame.type === "modem") {
         devices = [...devices.filter(item => item.id !== frame.data.id), frame.data]
@@ -62,6 +67,14 @@
           .sort((left, right) => right.id - left.id);
       } else if (frame.type === "activity") {
         activity = [{...frame.data, seq: frame.seq}, ...activity].slice(0, 60);
+      } else if (frame.type === "hook.rules") {
+        hooks = {...hooks, rules: patchRows(hooks.rules, frame.data)};
+      } else if (frame.type === "hook.destinations") {
+        hooks = {...hooks, destinations: patchRows(hooks.destinations, frame.data)};
+      } else if (frame.type === "hook.runs") {
+        hooks = {...hooks, runs: patchRows(hooks.runs, frame.data).sort((left, right) => right.id - left.id)};
+      } else if (frame.type === "hook.calls") {
+        hooks = {...hooks, calls: patchRows(hooks.calls, frame.data).sort((left, right) => right.time - left.time)};
       }
     };
     socket.onclose = event => {
@@ -69,6 +82,12 @@
       connection = event.code === 4401 ? "Token rejected" : "Disconnected";
       if (event.code !== 4401) reconnect = setTimeout(connect, 1500);
     };
+  }
+
+  function patchRows<Row extends HookState[keyof HookState][number]>(rows: Row[], changed: Row & {deleted?: boolean}) {
+    if (changed.deleted) return rows.filter(row => row.id !== changed.id);
+    return rows.some(row => row.id === changed.id) ?
+      rows.map(row => row.id === changed.id ? changed : row) : [changed, ...rows];
   }
 
   function signIn(event: SubmitEvent) {
@@ -90,6 +109,8 @@
     devices = [];
     messages = [];
     activity = [];
+    hooks = emptyHooks;
+    screen = "console";
     clips = [];
     selected = "";
     connection = "Disconnected";
@@ -98,9 +119,10 @@
   async function api(path: string, method = "GET", data?: unknown) {
     const headers: Record<string, string> = {};
     if (tokenRequired) headers.Authorization = "Bearer " + token;
-    if (method === "POST") headers["Content-Type"] = "application/json";
+    const hasBody = method === "POST" || method === "PUT";
+    if (hasBody) headers["Content-Type"] = "application/json";
     const response = await fetch(path, {method, headers,
-      body: method === "POST" ? JSON.stringify(data ?? {}) : undefined});
+      body: hasBody ? JSON.stringify(data ?? {}) : undefined});
     const result = await response.json();
     if (!response.ok) throw new Error(result.message ?? "Request failed");
     return result;
@@ -311,8 +333,16 @@
 <main>
   <header>
     <div><span class="eyebrow">CELLULAR CONSOLE</span><h1>ModemBox<span>.</span></h1></div>
-    <div class="status"><i class:online={connection === "Live"}></i>{connection}
-      {#if tokenRequired && token}<button onclick={signOut}>Disconnect</button>{/if}
+    <div class="header-actions">
+      {#if !tokenRequired || (token && connection !== "Token rejected")}
+        <nav class="screen-nav" aria-label="Console screens">
+          <button class:chosen={screen === "console"} onclick={() => (screen = "console")}>Console</button>
+          <button class:chosen={screen === "hooks"} onclick={() => (screen = "hooks")}>Hooks</button>
+        </nav>
+      {/if}
+      <div class="status"><i class:online={connection === "Live"}></i>{connection}
+        {#if tokenRequired && token}<button onclick={signOut}>Disconnect</button>{/if}
+      </div>
     </div>
   </header>
 
@@ -326,6 +356,9 @@
     </section>
   {:else}
     {#if error}<p class="error" role="alert">{error}</p>{/if}
+    {#if screen === "hooks"}
+      <Hooks {hooks} modems={devices} {messages} request={api} />
+    {:else}
     <nav aria-label="Modems">
       {#each devices as item (item.id)}
         <button class:chosen={item.id === selected} onclick={() => (selected = item.id)}>
@@ -423,7 +456,7 @@
           {#if device?.capabilities.sms}
             <form class="compose" onsubmit={submitSms}>
               <label>To <input type="tel" bind:value={smsNumber} required pattern={"[+]?[0-9]{3,20}"} /></label>
-              <label>Message <textarea bind:value={smsText} maxlength="70" required></textarea></label>
+              <label>Message <textarea bind:value={smsText} maxlength="16830" required></textarea></label>
               <button class="primary" disabled={busy}>Send SMS</button>
             </form>
           {/if}
@@ -446,6 +479,7 @@
         </section>
       </div>
     </div>
+    {/if}
   {/if}
 </main>
 
@@ -465,6 +499,8 @@
   i{display:inline-block;width:.5rem;height:.5rem;border-radius:50%;background:#8b9690;margin-right:.35rem}
   i.online{background:#7af5ac}
   nav{margin-bottom:1rem}
+  .header-actions{display:flex;align-items:center;justify-content:end;flex-wrap:wrap;gap:.85rem}
+  .screen-nav{margin:0}
   .grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.2fr);gap:1rem}
   .column{display:grid;gap:1rem;align-content:start;min-width:0}
   section{background:#181e1c;border:1px solid #353e3a;border-radius:.7rem;padding:1rem;min-width:0}

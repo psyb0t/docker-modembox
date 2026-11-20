@@ -25,6 +25,11 @@ Start with `list_modems` to find the device ID and its available capabilities. T
 | `stop_audio` | Stop clip playback |
 | `capture_audio` | Read 1 to 10 seconds of recent caller audio as a base64 WAV |
 | `modem_at` | Issue a single AT command permitted by the server |
+| `list_hooks` | List rules, HTTP destinations, call history, or action runs |
+| `save_hook_rule` | Create or replace a hook rule |
+| `save_hook_destination` | Create or replace an HTTP destination with write-only credentials |
+| `delete_hook` | Delete a rule or destination and cancel its queued actions |
+| `preview_hook` | Dry-run a rule against a saved SMS or call |
 
 For call audio, wait until the call is active and check the modem's audio capability before playing or capturing. If an SMS send returns an unknown result, check the outbox before retrying. See the [API reference](api.md) for audio frames and authentication.
 
