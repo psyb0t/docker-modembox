@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.1
+
+- Show the browser console with demo modem and SMS data in the README and documentation.
+- Document SIM unlock, SMS and calls, webhook setup and dry runs, and manual modem port mapping.
+- Clarify where to find per-segment status for multipart SMS.
+
 ## 0.2.0
 
 - Add rules that match incoming SMS or calls, then forward or reply by SMS, send HTTP webhooks, or decline the ringing call.

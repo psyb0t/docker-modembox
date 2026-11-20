@@ -12,10 +12,10 @@ Protected REST and MCP calls require an Authorization bearer header by default. 
 |---|---|
 | GET /healthz | Public application liveness |
 | GET /auth-mode | Public token requirement as `{"tokenRequired": true}` or `{"tokenRequired": false}` |
-| GET /v1/state | Device, recent message and activity snapshot |
+| GET /v1/state | Snapshot of devices, recent messages, activity, and hooks |
 | GET /v1/modems | Device details, capabilities, SIM and network state, call state |
 | GET /v1/messages | Use modem, before and limit query parameters. Returns items and next cursor |
-| GET /v1/messages/{id} | One message |
+| GET /v1/messages/{id} | One message, including segment status for multipart sends |
 | POST /v1/modems/{id}/sms | number and text |
 | POST /v1/modems/{id}/pin | pin and optional remember |
 | DELETE /v1/modems/{id}/pin | Forget the saved PIN for the current SIM |
@@ -39,7 +39,11 @@ See [MCP and agent integrations](mcp.md) for the tool list. Read-only AT command
 
 Use the ID returned by `GET /v1/modems` for modem actions and SMS filtering. Auto-discovered modems with a usable IMEI use a hardware UUID. Older messages retain their original modem ID in unfiltered message history. See [device identity](devices.md).
 
-REST failures return a stable code and message. Validate the SMS result before retrying. Submitted means the modem accepted the SMS. Unknown means the send may have completed before transport loss. Neither is a delivery receipt.
+REST failures return a stable code and message.
+
+## SMS submission status
+
+`submitted` means the modem accepted the SMS for sending. Carrier delivery is separate. A `partial` result means the modem accepted some segments before it rejected a later one. An `unknown` result means the send may have completed before transport loss. Check the `parts` array from `GET /v1/messages/{id}` for a multipart message before retrying.
 
 ## WebSockets
 

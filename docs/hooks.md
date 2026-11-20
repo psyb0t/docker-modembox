@@ -17,9 +17,17 @@ Open **Hooks** in the browser to create rules, manage HTTP destinations, and see
 
 A rule can restrict the receiving modem and match all or any of its conditions. Phone conditions support exact matches, prefixes, and lists. ModemBox strips common number formatting and keeps the international prefix. Caller ID is reported as present, withheld, or unavailable. A dry run shows the matches and rendered actions for a saved SMS or call without sending anything.
 
+## Send matching SMS to a webhook
+
+1. Open **Hooks**, then **HTTP destinations**. Select **New destination** and enter your webhook URL. Use **POST** for a webhook receiver such as n8n.
+2. Open **Rules** and select **New rule**. Choose **SMS received** and add a **Message text** condition with **Starts with** and the value `ALERT:`.
+3. Choose **Make HTTP request** and pick the destination. Keep **Standard event** to include the original message and sender.
+4. Pick a matching inbox message in **Preview record** and select **Dry run**. Check the rendered request, then save the rule.
+5. Send a new matching SMS to the modem and check **Delivery history** for its result and HTTP status.
+
 ## SMS and calls
 
-Leave the SMS recipient blank to reply to the sender, or enter a fixed number to forward. Use `{% raw %}{{text}}{% endraw %}` as the SMS template to forward the original body. Templates can also insert `{% raw %}{{peer}}{% endraw %}`, `{% raw %}{{modem}}{% endraw %}`, `{% raw %}{{outcome}}{% endraw %}`, and other event fields. Long outgoing SMS uses multipart submission. The outbox detail records each segment's status. A submitted segment was accepted by the modem. Partial and unknown submissions need operator review.
+Leave the SMS recipient blank to reply to the sender, or enter a fixed number to forward. Use `{% raw %}{{text}}{% endraw %}` as the SMS template to forward the original body. Templates can also insert `{% raw %}{{peer}}{% endraw %}`, `{% raw %}{{modem}}{% endraw %}`, `{% raw %}{{outcome}}{% endraw %}`, and other event fields. See [SMS submission status](api.md#sms-submission-status) for multipart and uncertain sends.
 
 Incoming SMS can trigger hooks after all parts arrive. Duplicate scans, legacy repairs, and texts dated before the rule was enabled stay in the inbox without firing. An SMS whose age cannot be determined is also kept without firing. Hook SMS waits while its modem is busy and has a per-instance limit of six automated send attempts per minute. Waiting actions expire after one hour.
 

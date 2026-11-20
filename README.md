@@ -11,6 +11,8 @@ Use [SMS and call hooks](https://psyb0t.github.io/docker-modembox/hooks/) to for
 
 Open a second browser and watch the same inbox, calls, and activity update live. A bearer token controls access by default. SQLite keeps the inbox and encrypted SIM PINs.
 
+![ModemBox console showing modem status, SMS, voice and live activity with demo data](docs/assets/console.png)
+
 ## Contents
 
 - [Quick start](#quick-start)
@@ -72,9 +74,11 @@ The full docs are at [psyb0t.github.io/docker-modembox](https://psyb0t.github.io
 | Guide | What you'll find |
 |---|---|
 | [Installation](https://psyb0t.github.io/docker-modembox/install/) | Compose, direct Docker, upgrades, and data storage |
+| [Browser console](https://psyb0t.github.io/docker-modembox/console/) | Unlock a SIM, use the inbox and outbox, and work with calls and audio |
 | [Devices and configuration](https://psyb0t.github.io/docker-modembox/devices/) | Modem profiles, SIM PINs, and runtime settings |
 | [REST and WebSockets](https://psyb0t.github.io/docker-modembox/api/) | Endpoints, live events, and call audio frames |
 | [MCP and agent integrations](https://psyb0t.github.io/docker-modembox/mcp/) | Client setup and the list of tools |
+| [SMS and call hooks](https://psyb0t.github.io/docker-modembox/hooks/) | Set up rules, try a dry run, and inspect deliveries |
 
 ## Development
 

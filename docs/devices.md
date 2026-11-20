@@ -17,6 +17,21 @@ nav_order: 3
 
 For a Huawei E173, verify the AT port with identification commands. The tested layout used USB interface 02 for control and interface 01 for audio. Match the physical USB device and interface during configuration. An unknown device can still be configured with a control port and use supported 3GPP commands. Its voice capability can remain unknown if the modem has no safe profile-specific probe. Call status support alone does not prove that it exposes a host audio device.
 
+### Map a control port manually
+
+If discovery misses a modem, check that the host sees its serial ports with `ls -l /dev/serial/by-id/`. Check which group owns the control port and close any host modem software using it. Use the device path that the container can see. For an installer-managed deployment, set it in `compose.override.yaml` next to `compose.yaml`, then run `modembox start`.
+
+```yaml
+services:
+  modembox:
+    environment:
+      MODEMBOX_DEVICES: '[{"id":"lab-modem","control":"/dev/ttyUSB2"}]'
+```
+
+Replace the example port with your modem's AT port. With direct Docker, put the same JSON value in the `MODEMBOX_DEVICES` entry in the file passed to `--env-file`. Once the modem appears, check its capability tags in the [browser console](console.md).
+
+### Device identity and SIM PINs
+
 An auto-discovered modem gets a UUID derived from its IMEI. Moving the same stick to another USB port or changing its SIM keeps that UUID. A modem that cannot report a usable IMEI gets a port-local ID. An explicit `MODEMBOX_DEVICES` mapping uses the ID you supplied.
 
 Messages saved by an older version under a USB port ID keep that ID. Open **All modems** in Messages to see them alongside messages from the current device.
