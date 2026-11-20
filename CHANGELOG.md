@@ -9,6 +9,7 @@
 - Added an opt-in physical SMS reply test with an invitation and a five-minute timeout.
 - Added a Compose installer with USB modem discovery, image selection, and local data storage.
 - Added an installed command for managing user and system installations.
+- Added installation via `curl | bash` and optional Tailscale HTTPS access through the installed command.
 - Added an explicit opt-out for operator token authentication.
 - Added the documentation site, funding links, and Glama maintainer metadata.
 - Avoided manual serial control line changes during port opening for USB modems that reject them.

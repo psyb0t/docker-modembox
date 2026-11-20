@@ -3,6 +3,8 @@ set -euo pipefail
 # modembox-managed-command
 
 readonly marker='# Managed by the ModemBox installer'
+readonly command_marker='# modembox-managed-command'
+readonly installer_url=https://raw.githubusercontent.com/psyb0t/docker-modembox/main/install.sh
 readonly system_command=/usr/local/bin/modembox
 temporary=''
 
@@ -104,6 +106,80 @@ EOF
 		printf '    group_add:\n'
 		printf '      - "%s"\n' "${groups[@]}"
 	fi
+
+	cat <<'EOF'
+  tailscale:
+    image: tailscale/tailscale:v1.102.5@sha256:c507f3a2a6ab1cabd8d809b98edeb41edbd5c3fb6ad9632ffd098b4c7d0b4065
+    profiles: [tailscale]
+    network_mode: service:modembox
+    depends_on:
+      modembox:
+        condition: service_healthy
+        restart: true
+    init: true
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=16m
+      - /var/run:rw,noexec,nosuid,size=8m
+    mem_limit: 256m
+    cpus: 0.5
+    pids_limit: 128
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+    environment:
+      TS_AUTHKEY: "${MODEMBOX_TAILSCALE_AUTHKEY:-}"
+      TS_HOSTNAME: "${MODEMBOX_TAILSCALE_HOSTNAME:-modembox}"
+      TS_AUTH_ONCE: "true"
+      TS_USERSPACE: "true"
+      TS_EXTRA_ARGS: --accept-dns=false
+      TS_STATE_DIR: /var/lib/tailscale
+      TS_SERVE_CONFIG: /config/serve.json
+      TS_ENABLE_HEALTH_CHECK: "true"
+      TS_LOCAL_ADDR_PORT: 127.0.0.1:9002
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:9002/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 30s
+    volumes:
+      - tailscale-state:/var/lib/tailscale
+      - type: bind
+        source: ./tailscale
+        target: /config
+        read_only: true
+        bind:
+          create_host_path: false
+volumes:
+  tailscale-state:
+EOF
+}
+
+write_tailscale_config() {
+	install -d -m 0755 -- "$tailscale_dir"
+	temporary="$(mktemp "$tailscale_dir/.serve.XXXXXX")"
+	cat >"$temporary" <<'EOF'
+{
+  "TCP": {
+    "443": { "HTTPS": true }
+  },
+  "Web": {
+    "${TS_CERT_DOMAIN}:443": {
+      "Handlers": {
+        "/": { "Proxy": "http://127.0.0.1:8000" }
+      }
+    }
+  }
+}
+EOF
+	chmod 0644 -- "$temporary"
+	mv -T -- "$temporary" "$tailscale_dir/serve.json"
 }
 
 set_paths() {
@@ -123,10 +199,12 @@ set_paths() {
 	compose_file="$config/compose.yaml"
 	env_file="$config/.env"
 	data_dir="$config/data"
+	tailscale_dir="$config/tailscale"
 	[[ ! -L "$config" && ! -L "$compose_file" && ! -L "$env_file" && ! -L "$data_dir" && ! -L "$command_file" ]] ||
 		fail 'Refusing to use a symlink for a ModemBox installation path.'
+	[[ ! -L "$tailscale_dir" ]] || fail 'Refusing to use a symlink for the Tailscale configuration.'
 	if [[ -e "$command_file" ]]; then
-		if [[ ! -f "$command_file" ]] || ! grep -Fxq '# modembox-managed-command' "$command_file"; then
+		if [[ ! -f "$command_file" ]] || ! grep -Fxq "$command_marker" "$command_file"; then
 			fail 'The existing modembox command was not installed by ModemBox.'
 		fi
 	fi
@@ -164,7 +242,7 @@ save_compose() {
 	local tag="$1"
 	temporary="$(mktemp "$config/.compose.XXXXXX")"
 	write_compose "$project" "$tag" >"$temporary"
-	compose "$temporary" config --quiet
+	compose "$temporary" --profile tailscale config --quiet
 	mv -T -- "$temporary" "$compose_file"
 }
 
@@ -185,25 +263,53 @@ configure() {
 	fi
 	[[ -f "$env_file" ]] || fail 'The token file must be a regular file.'
 	chmod 0600 -- "$env_file"
+	write_tailscale_config
 	save_compose "$tag"
 }
 
 uninstall_stack() {
-	local purge="$1" file
+	local purge="$1" file state_volume found_volume
 	if [[ -f "$compose_file" ]]; then
-		compose "$compose_file" down
+		compose "$compose_file" --profile tailscale down
 		rm -- "$compose_file"
 	fi
 	if [[ -f "$command_file" ]]; then rm -- "$command_file"; fi
+	if [[ -f "$tailscale_dir/serve.json" && ! -L "$tailscale_dir/serve.json" ]]; then
+		rm -- "$tailscale_dir/serve.json"
+	fi
 	if [[ "$purge" == true ]]; then
+		state_volume="${project}_tailscale-state"
+		found_volume="$(docker volume ls --filter "name=^${state_volume}$" --format '{{.Name}}')"
+		if [[ "$found_volume" == "$state_volume" ]]; then
+			docker volume rm "$state_volume"
+		fi
 		for file in "$env_file" "$data_dir"/modembox.sqlite3 "$data_dir"/modembox.sqlite3-wal \
 			"$data_dir"/modembox.sqlite3-shm "$data_dir"/pin.key "$data_dir"/modembox.log{,.1,.2,.3}; do
 			if [[ -f "$file" && ! -L "$file" ]]; then rm -- "$file"; fi
 		done
-		log INFO 'Removed ModemBox token and data files.'
+		log INFO 'Removed the ModemBox token, data files, and Tailscale state.'
 	else
-		log INFO 'Kept the token and data directory for reinstall.'
+		log INFO 'Kept the token, data directory, and Tailscale state for reinstall.'
 	fi
+}
+
+start_stack() {
+	local enabled existing
+	enabled="$(compose "$compose_file" config --environment | sed -n 's/^MODEMBOX_TAILSCALE_ENABLED=//p')" ||
+		fail 'Could not read the Compose environment.'
+	case "$enabled" in
+	true)
+		compose "$compose_file" --profile tailscale up -d "$@" modembox tailscale
+		;;
+	false | '')
+		existing="$(compose "$compose_file" --profile tailscale ps -aq tailscale)"
+		if [[ -n "$existing" ]]; then
+			compose "$compose_file" --profile tailscale rm -s -f tailscale
+		fi
+		compose "$compose_file" up -d "$@" modembox
+		;;
+	*) fail 'MODEMBOX_TAILSCALE_ENABLED must be true or false.' ;;
+	esac
 }
 
 upgrade_stack() {
@@ -216,7 +322,7 @@ upgrade_stack() {
 		docker pull "psyb0t/modembox:$tag"
 	fi
 	if [[ "$tag" != "$current_tag" ]]; then save_compose "$tag"; fi
-	compose "$compose_file" up -d --pull never
+	start_stack --pull missing
 }
 
 manage() {
@@ -242,12 +348,12 @@ manage() {
 	set_paths "$mode"
 	[[ -f "$compose_file" ]] || fail 'ModemBox is missing its Compose file. Rerun the installer.'
 	case "$action" in
-	start) compose "$compose_file" up -d ;;
-	stop) compose "$compose_file" stop ;;
-	status) compose "$compose_file" ps -a ;;
+	start) start_stack ;;
+	stop) compose "$compose_file" --profile tailscale stop ;;
+	status) compose "$compose_file" --profile tailscale ps -a ;;
 	logs)
 		shift
-		compose "$compose_file" logs "$@"
+		compose "$compose_file" --profile tailscale logs "$@"
 		;;
 	upgrade)
 		tag="${3:-$current_tag}"
@@ -299,11 +405,20 @@ install_command() {
 	tag="${tag:-$current_tag}"
 	validate_tag "$tag"
 	configure "$tag"
-	local bin_directory
+	local bin_directory source="${BASH_SOURCE[0]:-}"
 	bin_directory="$(dirname -- "$command_file")"
 	if [[ ! -d "$bin_directory" ]]; then install -d -m 0755 -- "$bin_directory"; fi
 	temporary="$(mktemp "$bin_directory/.modembox.XXXXXX")"
-	install -m 0755 -T -- "${BASH_SOURCE[0]}" "$temporary"
+	if [[ -n "$source" && -f "$source" ]]; then
+		install -m 0755 -T -- "$source" "$temporary"
+	else
+		curl -fsSL --proto '=https' --output "$temporary" "$installer_url" ||
+			fail 'Could not download the ModemBox command.'
+		if ! grep -Fxq "$command_marker" "$temporary" || ! bash -n "$temporary"; then
+			fail 'The downloaded ModemBox command is invalid.'
+		fi
+		chmod 0755 -- "$temporary"
+	fi
 	mv -T -- "$temporary" "$command_file"
 	if [[ "$mode" == system ]]; then
 		printf 'Start ModemBox with: sudo modembox start\n'

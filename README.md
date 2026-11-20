@@ -5,13 +5,13 @@
 [![license](https://raw.githubusercontent.com/psyb0t/docker-modembox/badges/license.svg)](LICENSE)
 [![Docker Pulls](https://img.shields.io/docker/pulls/psyb0t/modembox?style=flat-square)](https://hub.docker.com/r/psyb0t/modembox)
 
-ModemBox turns an attached USB cellular modem into a shared browser console, REST API and MCP server. Read and send SMS, inspect the SIM and radio, place or answer calls, and stream audio with supported devices.
+Plug a USB modem into a Linux box and run ModemBox. Send and read SMS, check the SIM and radio, and run AT commands from the browser, over HTTP, or through MCP. With supported hardware you can place and answer calls, listen, talk through the browser microphone, and play a WAV clip into the call.
 
-One operator token controls the instance by default. Each browser receives a snapshot on connect and live updates from other browsers, HTTP clients and MCP tools. FastAPI serves the static SvelteKit build.
+Open a second browser and watch the same inbox, calls, and activity update live. A bearer token controls access by default. SQLite keeps the inbox and encrypted SIM PINs.
 
 ## Contents
 
-- [Run on Linux](#run-on-linux)
+- [Quick start](#quick-start)
 - [Hardware](#hardware)
 - [Agent integrations](#agent-integrations)
 - [Documentation](#documentation)
@@ -19,32 +19,30 @@ One operator token controls the instance by default. Each browser receives a sna
 - [Sponsor](#sponsor)
 - [License](#license)
 
-## Run on Linux
+## Quick start
 
-Install ModemBox from this checkout, then start it:
+Plug in your USB modem on a Linux host with Docker Compose, curl, and OpenSSL.
 
 ```bash
-bash install.sh
-modembox start
+curl -fsSL https://raw.githubusercontent.com/psyb0t/docker-modembox/main/install.sh | bash
+~/.local/bin/modembox start
 ```
 
-Open http://localhost:8000 and enter the token from the installed `.env`. The installer selects `psyb0t/modembox:latest` on first install and configures supported USB modem discovery. SQLite and the PIN key live in `data/` beside the Compose file.
+Open `http://localhost:8000` and enter the token from `~/.config/modembox/.env`. The installer uses `psyb0t/modembox:latest` on a fresh install and stores the database and PIN key under `~/.config/modembox/data/`.
 
-The installer puts the command in `~/.local/bin`. Use `modembox upgrade` to refresh the selected image, `modembox upgrade --version vX.Y.Z` to select a published tag, and `modembox uninstall` to remove the stack and command while keeping the data. For a system install, use `sudo bash install.sh --system`.
+Use `modembox upgrade` to pull the current image tag, `modembox upgrade --version vX.Y.Z` to pin a release, or `modembox uninstall` to remove the stack and keep your data.
 
-Prefer direct Docker? Run `psyb0t/modembox:latest` with your own `.env`, a persistent `/data` mount, and access to the USB serial devices. See the [installation guide](https://psyb0t.github.io/docker-modembox/install/) for the full command and advanced options. Microphone access needs localhost or HTTPS.
+For tailnet HTTPS, set `MODEMBOX_TAILSCALE_ENABLED=true` in that same `.env` and run `modembox start`. The [installation guide](https://psyb0t.github.io/docker-modembox/install/) covers Tailscale login, system installs, and direct Docker.
 
 ## Hardware
 
-ModemBox reads manufacturer, model and firmware before selecting a profile. The Huawei E173 profile uses a separate serial PCM port. Other Huawei devices fall back to generic call and SMS control unless a known audio profile matches. Explicitly map a control port to use other vendors with the generic profile. Discoverable Huawei layouts can also be detected by Linux USB interface identity when the process can see the stable device paths and sysfs.
+ModemBox reads the modem's manufacturer, model, and firmware, then checks what it can do. The tested Huawei E173 layout has one serial port for commands and another for call audio. ModemBox detects known Huawei USB layouts. For other devices, map the control port and check the capabilities shown in the console.
 
-Each serial port needs one owner. Configure host modem software to leave ModemBox's control and audio ports alone. If Docker loses a passed device after USB re-enumeration, recreate the container with the updated node. Do not assume two dongles assign the same tty numbers or support the same voice commands.
-
-See [device setup and limitations](https://psyb0t.github.io/docker-modembox/devices/).
+Keep host modem software off the ports ModemBox uses. See the [device guide](https://psyb0t.github.io/docker-modembox/devices/) for port mapping, SIM PINs, and voice support.
 
 ## Agent integrations
 
-Connect a Streamable HTTP MCP client to http://localhost:8000/mcp with the same operator bearer token when auth is enabled. The tools act on the live modem shared by the web UI. List devices first to learn their current capabilities.
+Point your Streamable HTTP MCP client at `http://localhost:8000/mcp`. When authentication is on, use the same bearer token as the web console. Call `list_modems` first to see what the device supports.
 
 Once released, install the skill and optional stdio bridge through the shared catalogs:
 
@@ -63,7 +61,14 @@ For the stdio bridge, set `MODEMBOX_URL` to the base URL and `MODEMBOX_TOKEN` to
 
 ## Documentation
 
-[Read the ModemBox documentation](https://psyb0t.github.io/docker-modembox/) for installation, supported devices, and the [REST and WebSocket API](https://psyb0t.github.io/docker-modembox/api/).
+The full docs are at [psyb0t.github.io/docker-modembox](https://psyb0t.github.io/docker-modembox/).
+
+| Guide | What you'll find |
+|---|---|
+| [Installation](https://psyb0t.github.io/docker-modembox/install/) | Compose, direct Docker, upgrades, and data storage |
+| [Devices and configuration](https://psyb0t.github.io/docker-modembox/devices/) | Modem profiles, SIM PINs, and runtime settings |
+| [REST and WebSockets](https://psyb0t.github.io/docker-modembox/api/) | Endpoints, live events, and call audio frames |
+| [MCP and agent integrations](https://psyb0t.github.io/docker-modembox/mcp/) | Client setup and the list of tools |
 
 ## Development
 
@@ -73,15 +78,13 @@ make test
 make build
 ```
 
-Tests run in Docker. `make test-unit` covers codecs and discovery. `make test-integration` uses a simulated modem over Linux pseudo terminals with the real HTTP, MCP, WebSocket, and SQLite stack. `make test-ui` opens the console in a disposable Stealthy Auto Browse container, exercises messages and calls against a simulated modem, then removes the test containers. It starts the browser on the fixture's isolated network.
+Tests run in Docker. Unit tests cover codecs and discovery. Integration tests use a simulated modem on a Linux pseudo-terminal with the real API and SQLite database. The browser test drives SMS and call controls in Stealthy Auto Browse.
 
 `make test-real MODEMBOX_TEST_DEVICE=/dev/ttyUSB2` reads identity, SIM status, registration, and voice capability from a selected physical modem. It does not send SMS, place calls, or submit a PIN. Run it with the selected control port free.
 
 For a physical SMS reply check, set `MODEMBOX_TEST_NUMBER` to the test phone's international number in a private `.env.test` file. Set `MODEMBOX_TEST_PIN` if the modem's SIM needs unlocking. Run `make test-real-sms-receive MODEMBOX_TEST_DEVICE=/dev/ttyUSB2` with the control port free. The modem texts the test phone and asks for a `TEST1` reply. Set `MODEMBOX_TEST_SMS_TEXT` to use another reply. The test passes when a new SMS from the test phone matches the expected text exactly. It fails if the modem rejects the invitation or if no match arrives within five minutes of submission.
 
-The image builds the frontend in a separate stage and packages only its static output. This service uses one process so serial ports, call audio, and browser snapshots share one owner.
-
-Released images target Linux amd64 and arm64. See [AGENTS.md](AGENTS.md) for repository conventions.
+Released images target Linux amd64 and arm64.
 
 A push to `main` runs checks and publishes `:latest` and `:sha-<commit>`. A version tag waits for the successful `main` run for its commit, promotes that image to the version tag, and publishes the GitHub release, ClawHub packages, and MCP registry metadata.
 

@@ -8,16 +8,24 @@ nav_order: 2
 
 ## Docker Compose
 
-Run [install.sh](https://github.com/psyb0t/docker-modembox/blob/main/install.sh) from a source checkout as your normal user on the Linux Docker host. It needs Docker Compose and OpenSSL. Plug in your modem before installing so the installer can read its serial port group. With no serial device present, it uses the host's `dialout` group when available.
+Run the installer as your normal user on the Linux Docker host. You need Docker Compose, curl, and OpenSSL. Plug in your modem first so the installer can read its serial port group. With no serial device present, it uses the host's `dialout` group when available.
 
 ```bash
-bash install.sh
-modembox start
+curl -fsSL https://raw.githubusercontent.com/psyb0t/docker-modembox/main/install.sh | bash
+~/.local/bin/modembox start
 ```
 
 The user install puts the command in `~/.local/bin` and creates `compose.yaml`, a private `.env` with the operator token, and `data/` under `${XDG_CONFIG_HOME:-$HOME/.config}/modembox`. If `~/.local/bin` is outside your PATH, run `~/.local/bin/modembox start` or add that directory to your PATH. Keep the same `XDG_CONFIG_HOME` when you run the command.
 
-For a system install, run `sudo bash install.sh --system`. It puts the command in `/usr/local/bin` and the configuration and data in `/etc/modembox`. Use `sudo modembox` to manage it. Both install types publish http://localhost:8000. Open the console and enter the token from the installed `.env`.
+For a system install, run the following. It puts the command in `/usr/local/bin` and the configuration and data in `/etc/modembox`.
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/psyb0t/docker-modembox/main/install.sh |
+  sudo bash -s -- --system
+sudo modembox start
+```
+
+Both installs serve the console at http://localhost:8000. Enter the token from the installed `.env`. From a source checkout, you can also run `bash install.sh` or `sudo bash install.sh --system`.
 
 `data/` contains `modembox.sqlite3`, the PIN encryption key, and service logs. Back up the directory while the service is stopped.
 
@@ -26,18 +34,32 @@ For a system install, run `sudo bash install.sh --system`. It puts the command i
 | Command | What it does |
 |---|---|
 | `modembox start` | Starts the configured stack |
-| `modembox stop` | Stops the service |
-| `modembox status` | Shows the container status |
+| `modembox stop` | Stops the stack |
+| `modembox status` | Shows container status |
 | `modembox logs -f` | Follows the logs |
 | `modembox upgrade` | Pulls the current tag and starts the stack with it |
 | `modembox upgrade --version vX.Y.Z` | Pulls a published tag, saves the pin, and starts the stack |
 | `modembox upgrade --version latest` | Switches to the rolling image |
 | `modembox uninstall` | Removes the stack and command, retaining the token and data |
-| `modembox uninstall --purge-data` | Also deletes the token, inbox, PIN key, and service logs |
+| `modembox uninstall --purge-data` | Also deletes the token, inbox, PIN key, logs, and local Tailscale state |
 
 A fresh install selects `psyb0t/modembox:latest`. To pin a published tag from the start, pass `--version` to the installer. A failed pull keeps the current pin. For local builds, run `make build` and `bash install.sh --version local`, then start the stack. After rebuilding, run `modembox upgrade` to use the new local image.
 
 The installed command works from any directory. You can also use native `docker compose` commands from the configuration directory. Put local Compose changes in `compose.override.yaml` so reinstalling can regenerate the base file.
+
+### Tailscale access
+
+Enable MagicDNS and HTTPS certificates in your tailnet. In the installed `.env`, add the following and keep your ModemBox token in place. For an existing installation, rerun the installer first to add the sidecar to Compose.
+
+```dotenv
+MODEMBOX_TAILSCALE_ENABLED=true
+MODEMBOX_TAILSCALE_HOSTNAME=modembox
+# MODEMBOX_TAILSCALE_AUTHKEY=your-tailscale-auth-key
+```
+
+Run `modembox start`. On first start, use an auth key or follow the login URL from `modembox logs -f tailscale`. Open the node's full HTTPS name from the Tailscale Machines page. Tailscale Serve makes the web console, API, WebSockets, and MCP available to clients allowed by your tailnet policy. HTTPS also lets the browser use its microphone remotely.
+
+Set `MODEMBOX_TAILSCALE_ENABLED=false` and run `modembox start` to remove the sidecar. Its login persists across disables, upgrades, and standard uninstalls. To delete that local login, use `modembox uninstall --purge-data`. To remove the node from the tailnet, delete it from the Tailscale Machines page.
 
 ## Direct Docker
 
