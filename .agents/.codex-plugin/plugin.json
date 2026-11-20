@@ -1,0 +1,13 @@
+{
+  "name": "modembox",
+  "description": "USB cellular modem control for SMS, calls, audio, and AT commands.",
+  "homepage": "https://github.com/psyb0t/docker-modembox",
+  "license": "AGPL-3.0-only",
+  "author": {
+    "name": "psyb0t",
+    "url": "https://github.com/psyb0t"
+  },
+  "version": "0.1.0",
+  "repository": "https://github.com/psyb0t/docker-modembox",
+  "skills": "./skills/"
+}

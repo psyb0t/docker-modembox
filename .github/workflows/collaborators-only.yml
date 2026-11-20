@@ -1,0 +1,17 @@
+name: collaborators-only
+
+on:
+  pull_request_target:
+    types: [opened, reopened]
+
+permissions: {}
+
+jobs:
+  call-collaborators-only-workflow:
+    permissions:
+      pull-requests: write
+      issues: write
+    uses: psyb0t/reusable-github-workflows/.github/workflows/collaborators-only-workflow.yml@master
+    with:
+      close_message: "No PRs. Open an issue and I'll review it."
+      lock: true

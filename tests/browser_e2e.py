@@ -1,0 +1,105 @@
+import time
+
+import httpx
+
+from test_gateway import TOKEN
+
+BROWSER_URL = "http://127.0.0.1:8080"
+APP_URL = "http://127.0.0.1:8000"
+BROWSER_TOKEN = "EXAMPLE-DO-NOT-USE-browser"
+NUMBER = "+1234567890"
+MESSAGE = "Example SMS sent from the browser"
+
+
+class Browser:
+    def __init__(self, client):
+        self.client = client
+
+    def action(self, action, **arguments):
+        response = self.client.post("/", json={"action": action, **arguments})
+        response.raise_for_status()
+        result = response.json()
+        assert result["success"], result
+        return result["data"]
+
+    def wait(self, *needles):
+        deadline = time.monotonic() + 8
+        text = ""
+        while time.monotonic() < deadline:
+            text = self.action("get_text")["text"]
+            if all(needle in text for needle in needles):
+                return text
+            time.sleep(0.2)
+        raise AssertionError(f"Could not find {needles!r} in {text!r}")
+
+    def elements(self):
+        return self.action("get_interactive_elements")["elements"]
+
+    def click(self, title):
+        element = next(item for item in self.elements() if item["text"] == title)
+        self.action("system_click", **{key: element[key] for key in ("x", "y", "w", "h")})
+
+    def paste(self, index, text):
+        element = [item for item in self.elements() if item["tag"] in {"input", "textarea"}][index]
+        self.action("paste_text", text=text, **{key: element[key] for key in ("x", "y", "w", "h")})
+
+    def check_page(self):
+        assert self.action("detect_challenge")["status"] == "absent"
+
+
+def test_static_console_sms_and_call():
+    with (
+        httpx.Client(
+            base_url=BROWSER_URL, timeout=20, headers={"Authorization": "Bearer " + BROWSER_TOKEN}
+        ) as client,
+        httpx.Client(
+            base_url=APP_URL, timeout=5, headers={"Authorization": "Bearer " + TOKEN}
+        ) as gateway,
+    ):
+        deadline = time.monotonic() + 75
+        while True:
+            try:
+                if client.get("/health").is_success:
+                    break
+            except httpx.TransportError:
+                if time.monotonic() >= deadline:
+                    raise
+            assert time.monotonic() < deadline, "Browser failed to become ready"
+            time.sleep(0.5)
+        browser = Browser(client)
+        browser.action("goto", url=APP_URL)
+        browser.check_page()
+        browser.wait("Connect to ModemBox")
+        browser.paste(0, "EXAMPLE-DO-NOT-USE-wrong")
+        browser.click("Connect")
+        browser.check_page()
+        rejected = browser.wait("Token rejected")
+        assert "Example received text" not in rejected
+
+        browser.paste(0, TOKEN)
+        browser.click("Connect")
+        browser.check_page()
+        browser.wait("E173", "Example received text", "Example sent text", "Live activity")
+
+        browser.paste(3, NUMBER)
+        browser.paste(4, MESSAGE)
+        browser.click("Send SMS")
+        browser.check_page()
+        browser.wait(MESSAGE, "http send sms ok")
+        messages = gateway.get("/v1/messages").json()["items"]
+        assert any(item["body"] == MESSAGE and item["status"] == "submitted" for item in messages)
+
+        browser.paste(0, NUMBER)
+        browser.click("Dial")
+        browser.check_page()
+        browser.wait(NUMBER, "active", "Hang up", "http dial ok")
+        assert gateway.get("/v1/modems").json()[0]["calls"][0]["state"] == "active"
+
+        browser.click("Hang up")
+        browser.check_page()
+        browser.wait("Idle", "http hangup ok")
+        assert gateway.get("/v1/modems").json()[0]["calls"] == []
+
+        browser.action("send_key", key="ctrl+r")
+        browser.check_page()
+        browser.wait("Idle", MESSAGE, "http hangup ok")
