@@ -1,6 +1,6 @@
 [project]
 name = "modembox"
-version = "0.2.1"
+version = "0.2.2"
 description = "USB cellular modem gateway for SMS, voice and AT commands"
 requires-python = ">=3.12"
 dependencies = [

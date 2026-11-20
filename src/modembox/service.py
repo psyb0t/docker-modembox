@@ -36,6 +36,10 @@ class Service:
         }
 
     def publish(self, kind, payload):
+        if kind == "modem":
+            registered = self.modems.get(payload["id"])
+            if registered is None or registered.state is not payload:
+                return
         self.sequence += 1
         event = {"type": kind, "seq": self.sequence, "data": payload}
         if kind == "activity":

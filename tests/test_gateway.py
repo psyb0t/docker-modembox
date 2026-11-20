@@ -229,17 +229,19 @@ def test_modem_identity_and_sms_follow_hardware_across_usb_ports(tmp_path, monke
         state = wait_for(client, lambda s: bool(s["messages"]))
         modem_id = state["modems"][0]["id"]
         message = state["messages"][0]
-        devices[:] = []
-        wait_for(client, lambda s: not any(d["connected"] for d in s["modems"]))
-        devices[:] = [Device("usb-second-port", str(second))]
         with client.websocket_connect("/v1/events") as ws:
             ws.send_text(TOKEN)
             assert ws.receive_json()["type"] == "snapshot"
-            event = receive_until(
-                ws, lambda event: event["type"] == "modem" and event["data"]["connected"]
+            devices[:] = []
+            offline = receive_until(
+                ws, lambda event: event["type"] == "modem" and not event["data"]["connected"]
             )
+            assert offline["data"]["id"] == modem_id
+            devices[:] = [Device("usb-second-port", str(second))]
+            event = receive_until(ws, lambda event: event["type"] == "modem")
             close_events(ws)
         assert event["data"]["id"] == modem_id
+        assert event["data"]["connected"]
         assert [d["id"] for d in client.get("/v1/modems", headers=HEADERS).json()] == [modem_id]
 
     with TestClient(create_app(config)) as client:

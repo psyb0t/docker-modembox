@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.2
+
+- Keep the same modem tab when a USB modem is unplugged and reconnected.
+
 ## 0.2.1
 
 - Show the browser console with demo modem and SMS data in the README and documentation.
