@@ -17,8 +17,12 @@ nav_order: 3
 
 For a Huawei E173, verify the AT port with identification commands. The tested layout used USB interface 02 for control and interface 01 for audio. Match the physical USB device and interface during configuration. An unknown device can still be configured with a control port and use supported 3GPP commands. Its voice capability can remain unknown if the modem has no safe profile-specific probe. Call status support alone does not prove that it exposes a host audio device.
 
+An auto-discovered modem gets a UUID derived from its IMEI. Moving the same stick to another USB port or changing its SIM keeps that UUID. A modem that cannot report a usable IMEI gets a port-local ID. An explicit `MODEMBOX_DEVICES` mapping uses the ID you supplied.
+
+Messages saved by an older version under a USB port ID keep that ID. Open **All modems** in Messages to see them alongside messages from the current device.
+
 The PIN is saved only after successful unlock and encrypted with a local key. It is tied to the SIM's ICCID, so switching a SIM or changing its number cannot select the wrong saved PIN. Automatic unlock requires the ICCID to be readable while locked and a verified remaining retry count of at least two. Some devices need manual unlocking because they do not expose that information. Protect and back up the SQLite database and key together.
 
-Outbound SMS currently fits one message of up to 70 UTF-16 units. The inbox scans supported modem storage plus new message notifications. It displays multipart fragments separately. ModemBox leaves messages on the modem, so modem storage can fill up. Message status and feature tags distinguish submission and hardware capability from carrier confirmation.
+Outbound SMS currently fits one message of up to 70 UTF-16 units. The inbox scans supported modem storage plus new message notifications. It saves incoming multipart SMS as one message once every part arrives. Incomplete parts are saved across restarts. When all original parts of an older split message are still on the modem, the next scan replaces the fragment rows in the inbox with the joined text. ModemBox leaves messages on the modem, so modem storage can fill up. Message status and feature tags distinguish submission and hardware capability from carrier confirmation.
 
 WAV soundboard entries live in the browser tab. Caller audio is buffered briefly in RAM during the call. A browser can listen without a microphone. Headphones help prevent acoustic echo when talking through the browser. The gateway does not configure the host's cellular internet, alter network selection, or expose a public phone line by itself.

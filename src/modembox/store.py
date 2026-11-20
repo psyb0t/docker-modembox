@@ -5,6 +5,10 @@ from pathlib import Path
 
 from cryptography.fernet import Fernet, InvalidToken
 
+from .sms import SmsPart
+
+SMS_PART_WINDOW_SECONDS = 600
+
 
 class Store:
     def __init__(self, directory: Path):
@@ -34,6 +38,17 @@ class Store:
                 created TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
                 fingerprint TEXT UNIQUE
             );
+            CREATE TABLE IF NOT EXISTS sms_parts (
+                fingerprint TEXT PRIMARY KEY, group_key TEXT NOT NULL,
+                scope TEXT NOT NULL, peer TEXT NOT NULL,
+                reference TEXT NOT NULL, total INTEGER NOT NULL, coding INTEGER NOT NULL,
+                stamp INTEGER NOT NULL, sequence INTEGER NOT NULL, body TEXT NOT NULL,
+                message_id INTEGER,
+                UNIQUE (group_key, sequence)
+            );
+            CREATE INDEX IF NOT EXISTS pending_sms_parts
+                ON sms_parts (scope, peer, reference, total, coding)
+                WHERE message_id IS NULL;
         """)
         with self.db:
             self.db.execute("UPDATE messages SET status='unknown' WHERE status='sending'")
@@ -75,6 +90,84 @@ class Store:
             self.db.execute("UPDATE messages SET status=? WHERE id=?", (status, message_id))
         return self.message(message_id)
 
+    def add_sms_part(self, modem: str, scope: str, peer: str, body: str, part: SmsPart, raw: bytes):
+        fingerprint = hashlib.sha256(scope.encode() + raw).hexdigest()
+        with self.db:
+            if self.db.execute(
+                "SELECT 1 FROM sms_parts WHERE fingerprint = ?", (fingerprint,)
+            ).fetchone():
+                return None
+            candidates = self.db.execute(
+                """
+                SELECT group_key FROM sms_parts
+                WHERE scope = ? AND peer = ? AND reference = ? AND total = ? AND coding = ?
+                    AND message_id IS NULL
+                GROUP BY group_key
+                HAVING MIN(stamp) >= ? AND MAX(stamp) <= ? AND SUM(sequence = ?) = 0
+                LIMIT 2
+                """,
+                (
+                    scope,
+                    peer,
+                    part.reference,
+                    part.total,
+                    part.coding,
+                    part.timestamp - SMS_PART_WINDOW_SECONDS,
+                    part.timestamp + SMS_PART_WINDOW_SECONDS,
+                    part.sequence,
+                ),
+            ).fetchall()
+            group_key = candidates[0]["group_key"] if len(candidates) == 1 else fingerprint
+            self.db.execute(
+                """
+                INSERT INTO sms_parts
+                    (fingerprint, group_key, scope, peer, reference, total, coding,
+                     stamp, sequence, body)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    fingerprint,
+                    group_key,
+                    scope,
+                    peer,
+                    part.reference,
+                    part.total,
+                    part.coding,
+                    part.timestamp,
+                    part.sequence,
+                    body,
+                ),
+            )
+            parts = self.db.execute(
+                """
+                SELECT part.body, legacy.id AS legacy_id
+                FROM sms_parts AS part
+                LEFT JOIN messages AS legacy ON legacy.fingerprint = part.fingerprint
+                WHERE part.group_key = ?
+                ORDER BY part.sequence
+                """,
+                (group_key,),
+            ).fetchall()
+            if len(parts) != part.total:
+                return None
+            result = self.db.execute(
+                """
+                INSERT INTO messages (modem, direction, peer, body, status)
+                VALUES (?, 'incoming', ?, ?, 'received')
+                """,
+                (modem, peer, "".join(row["body"] for row in parts)),
+            )
+            message_id = result.lastrowid
+            self.db.execute(
+                "UPDATE sms_parts SET message_id = ? WHERE group_key = ?",
+                (message_id, group_key),
+            )
+        message = self.message(message_id)
+        replaces = [row["legacy_id"] for row in parts if row["legacy_id"] is not None]
+        if replaces:
+            message["replaces"] = replaces
+        return message
+
     def message(self, message_id: int):
         row = self.db.execute(
             "SELECT id,modem,direction,peer,body,status,created FROM messages WHERE id=?",
@@ -87,6 +180,10 @@ class Store:
             """
             SELECT id,modem,direction,peer,body,status,created FROM messages
             WHERE (? IS NULL OR modem = ?) AND (? IS NULL OR id < ?)
+                AND NOT EXISTS (
+                    SELECT 1 FROM sms_parts
+                    WHERE sms_parts.fingerprint = messages.fingerprint AND message_id IS NOT NULL
+                )
             ORDER BY id DESC LIMIT ?
             """,
             (modem, modem, before, before, limit),

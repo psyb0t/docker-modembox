@@ -8,7 +8,7 @@
     registration?: string; packetAttached?: string; audio?: boolean; playing?: boolean;
     microphone?: boolean; mediaError?: string};
   type Message = {id: number; modem: string; direction: string; peer: string; body: string;
-    created: string; status: string};
+    created: string; status: string; replaces?: number[]};
   type Activity = {seq: number; source: string; modem: string; action: string; outcome: string; time: number};
   type Clip = {name: string; wav: string};
   let token = "", draftToken = "", connection = "Disconnected", selected = "", error = "";
@@ -16,6 +16,7 @@
   let devices: Device[] = [], messages: Message[] = [], activity: Activity[] = [], clips: Clip[] = [];
   let smsNumber = "", smsText = "", dialNumber = "", pin = "", remember = false, command = "AT+CSQ";
   let atReply = "", busy = false, filter = "all", older = true;
+  let allModemMessages = false;
   let events: WebSocket | undefined, audio: WebSocket | undefined;
   let reconnect: ReturnType<typeof setTimeout> | undefined;
   let context: AudioContext | undefined, microphone: MediaStream | undefined;
@@ -25,9 +26,9 @@
   let visible: Message[] = [];
   let call: Call | undefined;
   $: device = devices.find(item => item.id === selected);
-  $: if (!selected && devices.length) selected = devices[0].id;
+  $: if (!devices.some(item => item.id === selected)) selected = devices[0]?.id ?? "";
   $: call = device?.calls[0];
-  $: visible = messages.filter(message => (!selected || message.modem === selected) &&
+  $: visible = messages.filter(message => (allModemMessages || !selected || message.modem === selected) &&
     (filter === "all" || message.direction === filter));
   $: if (listening && (!device?.audio || selected !== audioDevice)) stopAudio();
 
@@ -56,7 +57,8 @@
         devices = [...devices.filter(item => item.id !== frame.data.id), frame.data]
           .sort((left, right) => left.id.localeCompare(right.id));
       } else if (frame.type === "message") {
-        messages = [frame.data, ...messages.filter(item => item.id !== frame.data.id)]
+        const replaced = new Set([frame.data.id, ...(frame.data.replaces ?? [])]);
+        messages = [frame.data, ...messages.filter(item => !replaced.has(item.id))]
           .sort((left, right) => right.id - left.id);
       } else if (frame.type === "activity") {
         activity = [{...frame.data, seq: frame.seq}, ...activity].slice(0, 60);
@@ -409,6 +411,11 @@
       <div class="column">
         <section>
           <div class="heading"><h2>Messages</h2>
+            {#if selected}
+              <button onclick={() => (allModemMessages = !allModemMessages)}>
+                {allModemMessages ? "Selected modem" : "All modems"}
+              </button>
+            {/if}
             <select aria-label="Message direction" bind:value={filter}>
               <option value="all">All</option><option value="incoming">Inbox</option><option value="outgoing">Outbox</option>
             </select>

@@ -1,11 +1,22 @@
 import hashlib
+import re
 from dataclasses import dataclass
 from pathlib import Path
+from uuid import NAMESPACE_URL, uuid5
 
 from .config import Device
 
 HUAWEI_IDS = {"12d1:1001"}
 HUAWEI_PCM_MODELS = {"E173", "E169", "E169G"}
+IMEI = re.compile(r"(?P<equipment>[0-9]{14})[0-9]{1,2}")
+IMEI_NAMESPACE = "urn:modembox:imei:"
+
+
+def equipment_id(imei: str) -> str | None:
+    match = IMEI.fullmatch(imei.strip().strip('"'))
+    if not match or len(set(match["equipment"])) == 1:
+        return None
+    return str(uuid5(NAMESPACE_URL, IMEI_NAMESPACE + match["equipment"]))
 
 
 @dataclass(frozen=True)

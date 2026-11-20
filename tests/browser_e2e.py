@@ -79,7 +79,14 @@ def test_static_console_sms_and_call():
         browser.paste(0, TOKEN)
         browser.click("Connect")
         browser.check_page()
-        browser.wait("E173", "Example received text", "Example sent text", "Live activity")
+        initial = browser.wait(
+            "E173", "Example received text", "Example sent text", "Live activity", "Joined message"
+        )
+        assert "Example archived text" not in initial
+        browser.click("All modems")
+        browser.wait("Example archived text", "Selected modem")
+        browser.click("Selected modem")
+        assert "Example archived text" not in browser.wait("All modems", "Example received text")
 
         browser.paste(3, NUMBER)
         browser.paste(4, MESSAGE)

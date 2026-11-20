@@ -1,7 +1,9 @@
 # Changelog
 
-## Unreleased
+## 0.1.0
 
+- Join incoming multipart SMS and recover old split messages when their original segments are still on the modem.
+- Keep auto-discovered modem IDs stable across USB ports by deriving them from the modem's IMEI. Browse older port-keyed messages with the all-modems filter.
 - Added the initial modem gateway, SQLite SMS inbox/outbox and SIM PIN vault.
 - Added direct AT, Huawei serial voice, shared live browser state, and browser call audio.
 - Added FastMCP 2, agent packages and tag-triggered registry workflows.

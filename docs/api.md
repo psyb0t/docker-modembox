@@ -30,10 +30,14 @@ Protected REST and MCP calls require an Authorization bearer header by default. 
 
 See [MCP and agent integrations](mcp.md) for the tool list. Read-only AT commands are allowlisted. Raw writes require an operator opt-in and are unavailable during a call.
 
+Use the ID returned by `GET /v1/modems` for modem actions and SMS filtering. Auto-discovered modems with a usable IMEI use a hardware UUID. Older messages retain their original modem ID in unfiltered message history. See [device identity](devices.md).
+
 REST failures return a stable code and message. Validate the SMS result before retrying. Submitted means the modem accepted the SMS. Unknown means the send may have completed before transport loss. Neither is a delivery receipt.
 
 ## WebSockets
 
 /v1/events sends a snapshot with modems, messages and activity before sending modem, message and activity events. Sequence numbers increase in one running service. Reconnect for a fresh snapshot. Slow clients can receive a replacement snapshot.
+
+A `message` event can include `replaces`, the IDs of old fragment rows to remove from the inbox when a multipart SMS is joined.
 
 /v1/modems/{id}/audio/ws sends binary 20 ms PCM frames during a call. Listening clients get caller audio. One browser at a time can request the microphone with mic:on and release it with mic:off. Send PCM16 mono 8 kHz in 320-byte frames. WAV playback takes precedence over queued microphone frames. Caller audio stays in a short in-memory buffer for capture.

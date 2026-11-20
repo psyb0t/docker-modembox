@@ -6,7 +6,7 @@ from time import time
 from .config import Config
 from .errors import OperationError
 from .modem import Modem
-from .profiles import discover
+from .profiles import discover, equipment_id
 from .store import Store
 
 
@@ -15,7 +15,7 @@ class Service:
         self.config = config
         self.store = Store(config.data)
         self.modems: dict[str, Modem] = {}
-        self.tasks: dict[str, asyncio.Task] = {}
+        self.workers: dict[str, tuple[Modem, asyncio.Task]] = {}
         self.clients: set[asyncio.Queue] = set()
         self.activity = deque(maxlen=60)
         self.sequence = 0
@@ -54,7 +54,7 @@ class Service:
         device = self.modem(device_id)
         async with device.lock:
             try:
-                if not device.state["connected"]:
+                if self.modems.get(device_id) is not device or not device.state["connected"]:
                     raise OperationError("Modem is offline", "OFFLINE", 503)
                 match operation:
                     case "unlock":
@@ -98,25 +98,42 @@ class Service:
             },
         )
 
+    def register_modem(self, modem: Modem, imei: str):
+        hardware_id = equipment_id(imei) if not self.config.devices else None
+        modem_id = hardware_id or modem.device.id
+        previous = self.modems.get(modem_id)
+        if previous is modem:
+            return
+        if previous:
+            if any(worker is previous for worker, _ in self.workers.values()):
+                raise OperationError("Another modem already uses this equipment ID")
+            modem.failed_pins.update(previous.failed_pins)
+        old_id = modem.id
+        remove_old = old_id != modem_id and self.modems.get(old_id) is modem
+        if remove_old:
+            del self.modems[old_id]
+        modem.state = {"id": modem_id, "connected": False, "calls": [], "capabilities": {}}
+        self.modems[modem_id] = modem
+        if remove_old:
+            self.publish("snapshot", self.snapshot()["data"])
+
     async def scan(self):
         while True:
             present = {device.id: device for device in self.config.devices or discover()}
-            for device_id, worker in list(self.tasks.items()):
-                if present.get(device_id) == self.modems[device_id].device:
+            for device_id, (modem, worker) in list(self.workers.items()):
+                if present.get(device_id) == modem.device:
                     continue
                 worker.cancel()
                 await asyncio.gather(worker, return_exceptions=True)
-                del self.tasks[device_id]
+                del self.workers[device_id]
             for device_id, device in present.items():
-                if device_id in self.tasks:
+                if device_id in self.workers:
                     continue
-                modem = Modem(device, self.store, self.publish)
-                previous = self.modems.get(device_id)
-                if previous:
-                    modem.failed_pins.update(previous.failed_pins)
-                self.modems[device_id] = modem
-                self.publish("modem", modem.state)
-                self.tasks[device_id] = asyncio.create_task(modem.run())
+                modem = Modem(device, self.store, self.publish, self.register_modem)
+                if self.config.devices:
+                    self.register_modem(modem, "")
+                    self.publish("modem", modem.state)
+                self.workers[device_id] = (modem, asyncio.create_task(modem.run()))
             await asyncio.sleep(2)
 
     @asynccontextmanager
@@ -127,7 +144,8 @@ class Service:
         finally:
             task.cancel()
             await asyncio.gather(task, return_exceptions=True)
-            for worker in self.tasks.values():
+            workers = [worker for _, worker in self.workers.values()]
+            for worker in workers:
                 worker.cancel()
-            await asyncio.gather(*self.tasks.values(), return_exceptions=True)
+            await asyncio.gather(*workers, return_exceptions=True)
             self.store.db.close()

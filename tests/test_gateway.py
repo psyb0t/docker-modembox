@@ -1,3 +1,4 @@
+import hashlib
 import os
 import pty
 import select
@@ -11,15 +12,24 @@ from fastapi.testclient import TestClient
 
 from modembox.config import Config, Device
 from modembox.media import decode_clip, encode_clip
-from modembox.profiles import GENERIC, HUAWEI_PCM, discover, identify
+from modembox.profiles import GENERIC, HUAWEI_PCM, discover, equipment_id, identify
 from modembox.server import create_app
 from modembox.serial_at import close_port, open_port
+from modembox.service import Service
 from modembox.sms import decode_deliver, encode_submit
+from modembox.store import Store
 
 TOKEN = "EXAMPLE-DO-NOT-USE-token"
 HEADERS = {"Authorization": "Bearer " + TOKEN}
 MCP_HEADERS = {**HEADERS, "Accept": "application/json, text/event-stream"}
 DELIVER = "0000049121430008421010000000000400680069"
+
+
+def multipart_pdu(text, part, total=4, reference="42", stamp="42101000000000"):
+    header = bytes.fromhex("0003" + reference if len(reference) == 2 else "0804" + reference)
+    header += bytes((total, part))
+    payload = bytes((len(header),)) + header + text.encode("utf-16-be")
+    return bytes.fromhex("0040049121430008" + stamp) + bytes((len(payload),)) + payload
 
 
 class Emulator:
@@ -32,6 +42,8 @@ class Emulator:
         self.unlocked = False
         self.retries = 3
         self.iccid_fallback = False
+        self.imei = "123456789012345"
+        self.inbox = [bytes.fromhex(DELIVER)]
         self.commands = []
         self.thread.start()
 
@@ -44,13 +56,16 @@ class Emulator:
             "AT+CGMI": "huawei",
             "AT+CGMM": "E173",
             "AT+CGMR": "EXAMPLE",
-            "AT+CGSN": "123456789012345",
+            "AT+CGSN": self.imei,
             "AT+CPIN?": "+CPIN: READY" if self.unlocked else "+CPIN: SIM PIN",
             "AT^CPIN?": f"^CPIN: SIM PIN,10,10,{self.retries},10,3",
             "AT^ICCID?": "^ICCID: 89123456789012345678",
             "AT+CRSM=176,12258,0,0,10": '+CRSM: 144,0,"982143658709214365F7"',
             "AT+CPMS=?": '+CPMS: ("SM"),("SM"),("SM")',
-            "AT+CMGL=4": "+CMGL: 1,0,,21\r\n" + DELIVER,
+            "AT+CMGL=4": "\r\n".join(
+                f"+CMGL: {slot},0,,{len(pdu) - 1}\r\n{pdu.hex()}"
+                for slot, pdu in enumerate(self.inbox, 1)
+            ),
             "AT+CSQ": "+CSQ: 23,99",
             "AT+COPS?": '+COPS: 0,2,"00101",0',
             "AT+CREG?": "+CREG: 0,1",
@@ -127,6 +142,160 @@ def close_events(ws):
         if ws.receive()["type"] == "websocket.close":
             return
     pytest.fail("Event stream did not close")
+
+
+def test_multipart_inbox_repairs_legacy_rows_in_sequence(tmp_path, emulator):
+    config = Config(TOKEN, tmp_path, Path("web/build"), (Device("usb", emulator.path),))
+    segments = ["a" * 67, "b" * 67, "c" * 67, "end"]
+    pdus = [multipart_pdu(body, part) for part, body in enumerate(segments, 1)]
+    emulator.inbox = [pdus[3], pdus[1], pdus[0], pdus[2], pdus[1]]
+    emulator.unlocked = True
+    service = Service(config)
+    sim_key = hashlib.sha256(b"89123456789012345678").hexdigest().encode()
+    legacy_ids = [
+        service.store.add_message("usb", "incoming", "+1234", body, "received", sim_key + pdu)["id"]
+        for body, pdu in zip(segments, pdus, strict=True)
+    ]
+    with TestClient(create_app(config, service=service)) as client:
+        state = wait_for(client, lambda s: len(s["messages"]) == 1)
+        assert state["messages"][0]["body"] == "".join(segments)
+        assert client.get("/v1/messages", headers=HEADERS).json()["items"] == state["messages"]
+        for message_id in legacy_ids:
+            assert client.get(f"/v1/messages/{message_id}", headers=HEADERS).status_code == 200
+    with TestClient(create_app(config)) as client:
+        state = wait_for(client, lambda s: s["modems"] and s["modems"][0].get("connected"))
+        assert [message["body"] for message in state["messages"]] == ["".join(segments)]
+
+
+def test_multipart_inbox_keeps_incomplete_parts_on_restart(tmp_path, emulator):
+    config = Config(TOKEN, tmp_path, Path("web/build"), (Device("usb", emulator.path),))
+    emulator.inbox = [multipart_pdu("world", 2, total=2, reference="1234"), bytes.fromhex(DELIVER)]
+    emulator.unlocked = True
+    with TestClient(create_app(config)) as client:
+        state = wait_for(client, lambda s: any(row["body"] == "hi" for row in s["messages"]))
+        assert [row["body"] for row in state["messages"]] == ["hi"]
+
+    emulator.inbox = []
+    with TestClient(create_app(config)) as client, client.websocket_connect("/v1/events") as ws:
+        ws.send_text(TOKEN)
+        assert ws.receive_json()["type"] == "snapshot"
+        emulator.inbox = [multipart_pdu("hello ", 1, total=2, reference="1234")]
+        os.write(emulator.master, b'\r\n+CMTI: "SM",1\r\n')
+        event = receive_until(ws, lambda event: event["type"] == "message")
+        assert event["data"]["body"] == "hello world"
+        assert [
+            row["body"] for row in client.get("/v1/messages", headers=HEADERS).json()["items"]
+        ] == ["hello world", "hi"]
+        close_events(ws)
+
+
+@pytest.mark.parametrize("different", ["sim", "sender", "timestamp"])
+def test_multipart_segments_from_different_messages_do_not_mix(tmp_path, different):
+    first = multipart_pdu("hello ", 1, total=2)
+    second = multipart_pdu(
+        "world",
+        2,
+        total=2,
+        stamp="42101000110000" if different == "timestamp" else "42101000000000",
+    )
+    if different == "sender":
+        second = second[:4] + b"\x65\x87" + second[6:]
+    store = Store(tmp_path)
+    try:
+        for raw, scope in ((first, "sim1"), (second, "sim2" if different == "sim" else "sim1")):
+            sms = decode_deliver(raw)
+            assert store.add_sms_part("usb", scope, sms.sender, sms.body, sms.part, raw) is None
+        assert store.messages() == []
+    finally:
+        store.db.close()
+
+
+def test_modem_identity_and_sms_follow_hardware_across_usb_ports(tmp_path, monkeypatch, emulator):
+    from modembox import service
+
+    first = tmp_path / "ttyUSB2"
+    second = tmp_path / "ttyUSB8"
+    first.symlink_to(emulator.path)
+    second.symlink_to(emulator.path)
+    devices = [Device("usb-first-port", str(first))]
+    monkeypatch.setattr(service, "discover", lambda: devices.copy())
+    emulator.unlocked = True
+    config = Config(TOKEN, tmp_path / "db", Path("web/build"))
+
+    with TestClient(create_app(config)) as client:
+        state = wait_for(client, lambda s: bool(s["messages"]))
+        modem_id = state["modems"][0]["id"]
+        message = state["messages"][0]
+        devices[:] = []
+        wait_for(client, lambda s: not any(d["connected"] for d in s["modems"]))
+        devices[:] = [Device("usb-second-port", str(second))]
+        with client.websocket_connect("/v1/events") as ws:
+            ws.send_text(TOKEN)
+            assert ws.receive_json()["type"] == "snapshot"
+            event = receive_until(
+                ws, lambda event: event["type"] == "modem" and event["data"]["connected"]
+            )
+            close_events(ws)
+        assert event["data"]["id"] == modem_id
+        assert [d["id"] for d in client.get("/v1/modems", headers=HEADERS).json()] == [modem_id]
+
+    with TestClient(create_app(config)) as client:
+        state = wait_for(client, lambda s: any(d["connected"] for d in s["modems"]))
+        assert state["modems"][0]["id"] == modem_id
+        response = client.get("/v1/messages", params={"modem": modem_id}, headers=HEADERS)
+        assert response.json()["items"] == [message]
+
+
+def test_duplicate_equipment_identity_cannot_replace_a_connected_modem(
+    tmp_path, monkeypatch, emulator
+):
+    from modembox import service
+
+    duplicate = Emulator()
+    distinct = Emulator()
+    distinct.imei = "123456789012355"
+    devices = [Device("usb-first-port", emulator.path)]
+    monkeypatch.setattr(service, "discover", lambda: devices.copy())
+    config = Config(TOKEN, tmp_path, Path("web/build"))
+    try:
+        with TestClient(create_app(config)) as client:
+            state = wait_for(client, lambda s: any(d["connected"] for d in s["modems"]))
+            modem_id = state["modems"][0]["id"]
+            devices.extend(
+                [
+                    Device("usb-duplicate-port", duplicate.path),
+                    Device("usb-other-port", distinct.path),
+                ]
+            )
+            state = wait_for(
+                client,
+                lambda s: (
+                    any(d.get("imei") == distinct.imei for d in s["modems"])
+                    and "AT+CGSN" in duplicate.commands
+                ),
+            )
+            assert len(state["modems"]) == 2
+            assert {d["imei"] for d in state["modems"]} == {emulator.imei, distinct.imei}
+            response = client.post(
+                f"/v1/modems/{modem_id}/at", headers=HEADERS, json={"command": "AT+CSQ"}
+            )
+            assert response.status_code == 200
+            assert "AT+CSQ" in emulator.commands
+            assert "AT+CSQ" not in duplicate.commands
+    finally:
+        duplicate.close()
+        distinct.close()
+
+
+def test_discovered_modem_without_imei_uses_its_port_id(tmp_path, monkeypatch, emulator):
+    from modembox import service
+
+    emulator.imei = ""
+    monkeypatch.setattr(service, "discover", lambda: [Device("usb-current-port", emulator.path)])
+    config = Config(TOKEN, tmp_path, Path("web/build"))
+    with TestClient(create_app(config)) as client:
+        state = wait_for(client, lambda s: any(d["connected"] for d in s["modems"]))
+        assert [d["id"] for d in state["modems"]] == ["usb-current-port"]
 
 
 def test_serial_unlock_inbox_and_shared_call_state(tmp_path, emulator):
@@ -333,6 +502,34 @@ def test_codecs_and_profiles():
     assert decode_clip(encode_clip(payload)) == payload
     assert identify("Huawei", "E173") is HUAWEI_PCM
     assert identify("Unknown", "E173") is GENERIC
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("reference", ["42", "1234"])
+def test_decode_multipart_header(reference):
+    sms = decode_deliver(multipart_pdu("hello", 2, reference=reference))
+    assert sms.body == "hello"
+    assert (sms.part.reference, sms.part.total, sms.part.sequence) == (reference, 4, 2)
+    with pytest.raises(ValueError):
+        decode_deliver(multipart_pdu("hello", 5, reference=reference))
+    with pytest.raises(ValueError):
+        decode_deliver(multipart_pdu("hello", 2, reference=reference)[:-1])
+
+
+@pytest.mark.unit
+def test_equipment_id_uses_the_hardware_digits():
+    identifier = equipment_id("123456789012345")
+    assert identifier
+    assert equipment_id(' "1234567890123401" ') == identifier
+    assert equipment_id("123456789012355") != identifier
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "imei", ["", "123", "000000000000000", "１２３４５６７８９０１２３４５", "ERROR"]
+)
+def test_equipment_id_rejects_unusable_values(imei):
+    assert equipment_id(imei) is None
 
 
 @pytest.mark.unit

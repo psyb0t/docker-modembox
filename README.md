@@ -25,10 +25,14 @@ Plug in your USB modem on a Linux host with Docker Compose, curl, and OpenSSL.
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/psyb0t/docker-modembox/main/install.sh | bash
-~/.local/bin/modembox start
+modembox start
 ```
 
-Open `http://localhost:8000` and enter the token from `~/.config/modembox/.env`. The installer uses `psyb0t/modembox:latest` on a fresh install and stores the database and PIN key under `~/.config/modembox/data/`.
+If your shell cannot find `modembox`, run `~/.local/bin/modembox start`.
+
+The installer generates `MODEMBOX_TOKEN` on first install and saves it in `~/.config/modembox/.env`. Open `http://localhost:8000` and paste the value into the **Access token** field.
+
+Fresh installs use `psyb0t/modembox:latest` and store the database and PIN key under `~/.config/modembox/data/`.
 
 Use `modembox upgrade` to pull the current image tag, `modembox upgrade --version vX.Y.Z` to pin a release, or `modembox uninstall` to remove the stack and keep your data.
 

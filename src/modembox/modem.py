@@ -14,7 +14,6 @@ from .sms import PHONE, decode_deliver, encode_submit
 from .store import Store
 
 logger = logging.getLogger(__name__)
-IMEI = re.compile(r"[0-9]{14,17}")
 ICCID = re.compile(r"89[0-9]{16,20}")
 PIN = re.compile(r"[0-9]{4,8}")
 RETRIES = re.compile(r"[^,]+,[^,]*,\s*\d+,\s*(\d+),\s*\d+,\s*\d+")
@@ -56,10 +55,11 @@ def parse_calls(reply: Reply) -> list[Call]:
 
 
 class Modem:
-    def __init__(self, device: Device, store: Store, publish):
+    def __init__(self, device: Device, store: Store, publish, register):
         self.device = device
         self.store = store
         self.publish = publish
+        self.register = register
         self.at: AT | None = None
         self.media: Media | None = None
         self.profile = GENERIC
@@ -76,6 +76,10 @@ class Modem:
         self.ring = False
         self.sms_storages: set[str] = set()
         self.configured_ready = False
+
+    @property
+    def id(self) -> str:
+        return self.state["id"]
 
     def put(self, **fields):
         if all(self.state.get(key) == value for key, value in fields.items()):
@@ -133,10 +137,9 @@ class Modem:
             ("imei", "AT+CGSN", "+CGSN:"),
         ):
             reply = await self.command(cmd)
-            fields[key] = reply.field(prefix) or (
-                reply.lines[0] if reply.ok and reply.lines else ""
-            )
+            fields[key] = (reply.field(prefix) or next(iter(reply.lines), "")) if reply.ok else ""
         self.profile = identify(fields["manufacturer"], fields["model"])
+        self.register(self, fields["imei"])
         self.put(connected=True, profile=self.profile.name, **fields)
         await self.refresh_sim(auto=True)
 
@@ -181,9 +184,7 @@ class Modem:
                 try:
                     await self.unlock(pin, remember=True)
                 except OperationError:
-                    logger.warning(
-                        "Saved SIM PIN could not be used", extra={"modem": self.device.id}
-                    )
+                    logger.warning("Saved SIM PIN could not be used", extra={"modem": self.id})
         if state != "READY":
             self.configured_ready = False
             return
@@ -288,14 +289,19 @@ class Modem:
                     continue
                 raw = bytes.fromhex(line)
                 try:
-                    peer, body, _ = decode_deliver(raw)
+                    sms = decode_deliver(raw)
                 except (ValueError, IndexError):
                     logger.debug("Skipped non-deliver or malformed SMS PDU")
                     continue
-                fingerprint = (self.sim_key or self.device.id).encode() + raw
-                message = self.store.add_message(
-                    self.device.id, "incoming", peer, body, "received", fingerprint
-                )
+                scope = self.sim_key or self.id
+                if sms.part is not None:
+                    message = self.store.add_sms_part(
+                        self.id, scope, sms.sender, sms.body, sms.part, raw
+                    )
+                else:
+                    message = self.store.add_message(
+                        self.id, "incoming", sms.sender, sms.body, "received", scope.encode() + raw
+                    )
                 if message:
                     self.publish("message", message)
         self.sms_at = monotonic() + SMS_POLL
@@ -310,7 +316,7 @@ class Modem:
             raise OperationError(str(error), "INVALID_MESSAGE", 422) from error
         if self.state["calls"]:
             raise OperationError("SMS sending is paused during calls")
-        message = self.store.add_message(self.device.id, "outgoing", number, text, "sending")
+        message = self.store.add_message(self.id, "outgoing", number, text, "sending")
         self.publish("message", message)
         try:
             response = await self.command(
@@ -460,7 +466,7 @@ class Modem:
                     self.disconnect()
                     logger.debug(
                         "Modem polling failed",
-                        extra={"modem": self.device.id, "kind": type(error).__name__},
+                        extra={"modem": self.id, "kind": type(error).__name__},
                     )
                     await asyncio.sleep(2)
                 await asyncio.sleep(0.08)

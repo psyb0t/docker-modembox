@@ -12,7 +12,7 @@ Run the installer as your normal user on the Linux Docker host. You need Docker 
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/psyb0t/docker-modembox/main/install.sh | bash
-~/.local/bin/modembox start
+modembox start
 ```
 
 The user install puts the command in `~/.local/bin` and creates `compose.yaml`, a private `.env` with the operator token, and `data/` under `${XDG_CONFIG_HOME:-$HOME/.config}/modembox`. If `~/.local/bin` is outside your PATH, run `~/.local/bin/modembox start` or add that directory to your PATH. Keep the same `XDG_CONFIG_HOME` when you run the command.
@@ -25,7 +25,9 @@ curl -fsSL https://raw.githubusercontent.com/psyb0t/docker-modembox/main/install
 sudo modembox start
 ```
 
-Both installs serve the console at http://localhost:8000. Enter the token from the installed `.env`. From a source checkout, you can also run `bash install.sh` or `sudo bash install.sh --system`.
+The installer generates a random `MODEMBOX_TOKEN` when the installed `.env` does not exist. If the file exists, the installer keeps its contents. Open http://localhost:8000 and paste the value of `MODEMBOX_TOKEN` into the **Access token** field. For a system install, the token is in `/etc/modembox/.env`.
+
+From a source checkout, you can also run `bash install.sh` or `sudo bash install.sh --system`.
 
 `data/` contains `modembox.sqlite3`, the PIN encryption key, and service logs. Back up the directory while the service is stopped.
 
