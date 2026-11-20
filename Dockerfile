@@ -25,6 +25,7 @@ COPY --from=web /web/build ./web/build/
 ENV PATH=/app/.venv/bin:$PATH
 
 FROM python-base AS runtime
+LABEL io.modelcontextprotocol.server.name="io.github.psyb0t/modembox"
 RUN groupadd --gid 10001 modembox && useradd --uid 10001 --gid modembox --no-create-home modembox && install -d -m 0700 -o modembox -g modembox /data
 COPY --from=deps /app/.venv /app/.venv
 COPY --from=web /web/build /app/ui

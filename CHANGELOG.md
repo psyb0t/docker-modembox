@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.1
+
+- Add the Docker image label the MCP Registry requires to verify package ownership.
+
 ## 0.1.0
 
 - Join incoming multipart SMS and recover old split messages when their original segments are still on the modem.
