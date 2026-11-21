@@ -44,7 +44,7 @@ For tailnet HTTPS, set `MODEMBOX_TAILSCALE_ENABLED=true` in that same `.env` and
 
 ## Hardware
 
-ModemBox reads the modem's manufacturer, model, and firmware, then checks what it can do. The tested Huawei E173 layout has one serial port for commands and another for call audio. ModemBox detects known Huawei USB layouts. For other devices, map the control port and check the capabilities shown in the console.
+The Huawei E173 was tested with SMS, voice calls, and serial call audio. ModemBox detects known Huawei USB layouts. For other devices, map the control port and check the capabilities shown in the console. See the [hardware compatibility table](https://psyb0t.github.io/docker-modembox/devices/#hardware-compatibility) for test coverage and links to the E173 manual and FCC filings.
 
 Keep host modem software off the ports ModemBox uses. See the [device guide](https://psyb0t.github.io/docker-modembox/devices/) for port mapping, SIM PINs, and voice support.
 

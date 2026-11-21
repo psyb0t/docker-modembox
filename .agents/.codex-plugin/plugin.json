@@ -7,7 +7,7 @@
     "name": "psyb0t",
     "url": "https://github.com/psyb0t"
   },
-  "version": "0.2.2",
+  "version": "0.2.3",
   "repository": "https://github.com/psyb0t/docker-modembox",
   "skills": "./skills/"
 }

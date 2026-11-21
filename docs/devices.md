@@ -6,6 +6,21 @@ nav_order: 3
 
 # Devices and configuration
 
+## Hardware compatibility
+
+| Device | ModemBox support | Physical coverage |
+|---|---|---|
+| Huawei E173 | USB discovery on the layout below, SMS, voice calls, and serial PCM audio | Tested on Linux with firmware `11.126.83.00.264` and USB ID `12d1:1001`. Verified SMS reception, an outgoing call, WAV playback into the call, and capture of caller audio. |
+| Huawei E169 and E169G | ModemBox selects the Huawei serial PCM profile and probes for voice and audio | Verify on your device. Firmware and USB layout can vary. |
+| Other USB serial modems | Map the control port manually. ModemBox probes standard AT capabilities. | SMS and call controls depend on the device's AT support. The generic profile has no audio setup. |
+
+The E173 is a 2G/3G modem. Check the model suffix printed on the stick when comparing hardware or firmware. The physical test used USB interface `02` for AT commands and `01` for audio. Auto-discovery matches USB ID `12d1:1001` and requires interface `02`. Automated tests send microphone PCM over WebSocket to a simulated modem.
+
+- [Huawei E173 USB Stick manual (PDF)](https://gzhls.at/blob/ldb/f/0/0/a/67e162a9d1d0ce56ed690613b12cf92f0448.pdf)
+- [Huawei E173u-1 FCC filing](https://fccid.io/QISE173U-1) and [Huawei E173s-1 FCC filing](https://fccid.io/QISE173S-1)
+
+## Runtime settings
+
 | Setting | Meaning |
 |---|---|
 | MODEMBOX_TOKEN | Operator bearer token, 16 to 256 ASCII characters. Required by default |
@@ -15,7 +30,7 @@ nav_order: 3
 | MODEMBOX_DATA_DIR | SQLite, private SIM PIN key and rotating logs. Docker uses /data |
 | MODEMBOX_WEB_DIR | Static frontend directory. Docker uses /app/ui |
 
-For a Huawei E173, verify the AT port with identification commands. The tested layout used USB interface 02 for control and interface 01 for audio. Match the physical USB device and interface during configuration. An unknown device can still be configured with a control port and use supported 3GPP commands. Its voice capability can remain unknown if the modem has no safe profile-specific probe. Call status support alone does not prove that it exposes a host audio device.
+Call status and audio are separate capabilities. A modem can report call state even when ModemBox has no driver for its audio interface.
 
 ### Map a control port manually
 

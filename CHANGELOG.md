@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.3
+
+- Document the tested Huawei E173 setup, modem compatibility, and links to the E173 manual and FCC filings.
+
 ## 0.2.2
 
 - Keep the same modem tab when a USB modem is unplugged and reconnected.
