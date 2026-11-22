@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Build and publish the Markdown documentation with the shared GitHub Pages workflow.
+
 ## 0.2.3
 
 - Document the tested Huawei E173 setup, modem compatibility, and links to the E173 manual and FCC filings.
