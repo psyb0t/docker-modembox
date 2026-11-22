@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Build and publish the Markdown documentation with the shared GitHub Pages workflow.
+- Build the documentation with Docusaurus and publish it through the shared GitHub Pages workflow. The guides keep their existing URLs and use local search.
 
 ## 0.2.3
 

@@ -1,7 +1,6 @@
 ---
 title: Browser console
 description: Unlock a SIM, send and receive SMS, operate calls, and check live activity in the browser.
-nav_order: 7
 ---
 
 # Browser console

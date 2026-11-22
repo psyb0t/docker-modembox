@@ -1,7 +1,6 @@
 ---
 title: API
 description: Look up ModemBox REST endpoints, authentication, live modem events, and WebSocket call audio frames.
-nav_order: 4
 ---
 
 # API

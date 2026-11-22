@@ -3,6 +3,7 @@
 .agents
 .claude
 docs
+website
 .testing
 .env*
 *.local.json

@@ -16,4 +16,4 @@ jobs:
       id-token: write
     uses: psyb0t/reusable-github-workflows/.github/workflows/pages-workflow.yml@master
     with:
-      site_dir: .testing/docs-site
+      site_dir: website/build

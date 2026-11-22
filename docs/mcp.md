@@ -1,7 +1,6 @@
 ---
 title: MCP and agent integrations
 description: Connect an MCP client to ModemBox, configure the operator token, and look up every tool for SMS, calls, audio, and AT commands.
-nav_order: 5
 ---
 
 # MCP and agent integrations

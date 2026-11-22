@@ -1,7 +1,6 @@
 ---
 title: SMS and call hooks
 description: Forward or reply to SMS, send webhooks, and decline incoming calls with rules.
-nav_order: 6
 ---
 
 # SMS and call hooks
@@ -27,7 +26,7 @@ A rule can restrict the receiving modem and match all or any of its conditions. 
 
 ## SMS and calls
 
-Leave the SMS recipient blank to reply to the sender, or enter a fixed number to forward. Use `{% raw %}{{text}}{% endraw %}` as the SMS template to forward the original body. Templates can also insert `{% raw %}{{peer}}{% endraw %}`, `{% raw %}{{modem}}{% endraw %}`, `{% raw %}{{outcome}}{% endraw %}`, and other event fields. See [SMS submission status](api.md#sms-submission-status) for multipart and uncertain sends.
+Leave the SMS recipient blank to reply to the sender, or enter a fixed number to forward. Use `{{text}}` as the SMS template to forward the original body. Templates can also insert `{{peer}}`, `{{modem}}`, `{{outcome}}`, and other event fields. See [SMS submission status](api.md#sms-submission-status) for multipart and uncertain sends.
 
 Incoming SMS can trigger hooks after all parts arrive. Duplicate scans, legacy repairs, and texts dated before the rule was enabled stay in the inbox without firing. An SMS whose age cannot be determined is also kept without firing. Hook SMS waits while its modem is busy and has a per-instance limit of six automated send attempts per minute. Waiting actions expire after one hour.
 

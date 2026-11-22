@@ -1,7 +1,6 @@
 ---
 title: Devices and configuration
 description: Check USB modem discovery and capabilities, set runtime options, and manage the SIM PIN and modem storage.
-nav_order: 3
 ---
 
 # Devices and configuration

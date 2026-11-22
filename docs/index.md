@@ -1,10 +1,7 @@
 ---
 title: ModemBox
 description: Set up a self-hosted gateway for USB modem SMS, voice calls, audio, and AT commands.
-nav_order: 1
-permalink: /
-seo:
-  type: WebSite
+slug: /
 ---
 
 # ModemBox

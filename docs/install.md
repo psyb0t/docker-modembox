@@ -1,7 +1,6 @@
 ---
 title: Install ModemBox
 description: Install ModemBox with Docker, manage image versions and upgrades, and preserve the SQLite data and SIM PIN key.
-nav_order: 2
 ---
 
 # Install ModemBox

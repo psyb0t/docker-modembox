@@ -31,6 +31,11 @@ pyrightconfig.json
 node_modules/
 .svelte-kit/
 web/build/
+/website/.assets/
+/website/.corepack/
+/website/.docusaurus/
+/website/.pnpm-store/
+/website/build/
 __pycache__/
 .pytest_cache/
 .ruff_cache/
