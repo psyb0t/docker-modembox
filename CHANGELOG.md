@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Match the project directory's colors and typography, and link back to All projects from the docs navbar.
 - Exclude the internal search page from the documentation sitemap.
 - Generate OpenAPI JSON from the REST routes and use it to build the endpoint reference and curl examples.
 - Build the documentation with Docusaurus and publish it through the shared GitHub Pages workflow. The guides keep their existing URLs and use local search.

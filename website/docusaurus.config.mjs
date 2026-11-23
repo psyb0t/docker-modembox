@@ -18,6 +18,7 @@ export default {
     ["classic", {
       blog: false,
       sitemap: { ignorePatterns: [baseUrl + "search", baseUrl + "search/"] },
+      theme: { customCss: "./src/css/theme.css" },
       docs: {
         path: ".content",
         routeBasePath: "/",
@@ -57,11 +58,12 @@ export default {
     navbar: {
       title: "ModemBox",
       items: [
+        { href: "https://psyb0t.github.io/projects/", label: "All projects", position: "left" },
         { href: repository, label: "GitHub", position: "right" },
         { href: repository + "/blob/main/CHANGELOG.md", label: "Changelog", position: "right" },
       ],
     },
-    colorMode: { defaultMode: "dark", respectPrefersColorScheme: true },
+    colorMode: { defaultMode: "dark" },
     api: { schemaExpansion: { enabled: true, default: 1 } },
   },
 };
