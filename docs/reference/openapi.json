@@ -1,0 +1,3343 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "ModemBox",
+    "description": "Manage USB modems, SMS, calls, and hooks. Protected routes use bearer auth by default. Omit the Authorization header when MODEMBOX_DISABLE_AUTH=true.",
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "http://localhost:8000",
+      "description": "Default local installation"
+    }
+  ],
+  "paths": {
+    "/healthz": {
+      "get": {
+        "tags": [
+          "Service"
+        ],
+        "summary": "Check liveness",
+        "description": "Return whether ModemBox is running.",
+        "operationId": "health_healthz_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Health"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "curl",
+            "label": "curl",
+            "source": "curl --request GET \"${MODEMBOX_URL:-http://localhost:8000}/healthz\""
+          }
+        ]
+      }
+    },
+    "/auth-mode": {
+      "get": {
+        "tags": [
+          "Service"
+        ],
+        "summary": "Check authentication mode",
+        "description": "Return the token requirement for this instance as tokenRequired.",
+        "operationId": "auth_mode_auth_mode_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthMode"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "curl",
+            "label": "curl",
+            "source": "curl --request GET \"${MODEMBOX_URL:-http://localhost:8000}/auth-mode\""
+          }
+        ]
+      }
+    },
+    "/v1/state": {
+      "get": {
+        "tags": [
+          "Modems"
+        ],
+        "summary": "Get gateway state",
+        "description": "Read the modem, message, activity, and hook snapshot.",
+        "operationId": "state_v1_state_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayState"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid bearer token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Origin or operation forbidden.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "operatorToken": []
+          }
+        ],
+        "x-codeSamples": [
+          {
+            "lang": "curl",
+            "label": "curl",
+            "source": "curl --request GET \"${MODEMBOX_URL:-http://localhost:8000}/v1/state\" \\\n  --header \"Authorization: Bearer ${MODEMBOX_TOKEN}\""
+          }
+        ]
+      }
+    },
+    "/v1/modems": {
+      "get": {
+        "tags": [
+          "Modems"
+        ],
+        "summary": "List modems",
+        "description": "Read device IDs, capabilities, SIM status, network state, and calls.",
+        "operationId": "modems_v1_modems_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ModemState"
+                  },
+                  "type": "array",
+                  "title": "Response 200 Modems V1 Modems Get"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid bearer token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Origin or operation forbidden.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "operatorToken": []
+          }
+        ],
+        "x-codeSamples": [
+          {
+            "lang": "curl",
+            "label": "curl",
+            "source": "curl --request GET \"${MODEMBOX_URL:-http://localhost:8000}/v1/modems\" \\\n  --header \"Authorization: Bearer ${MODEMBOX_TOKEN}\""
+          }
+        ]
+      }
+    },
+    "/v1/hooks/{resource}": {
+      "get": {
+        "tags": [
+          "Hooks"
+        ],
+        "summary": "List hook records",
+        "description": "List rules, destinations, runs, or incoming calls, newest first.",
+        "operationId": "hook_page_v1_hooks__resource__get",
+        "parameters": [
+          {
+            "name": "resource",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "enum": [
+                "rules",
+                "destinations",
+                "runs",
+                "calls"
+              ],
+              "type": "string",
+              "title": "Resource"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "description": "Maximum records to return.",
+              "default": 50,
+              "title": "Limit"
+            },
+            "description": "Maximum records to return."
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Records to skip before this page.",
+              "default": 0,
+              "title": "Offset"
+            },
+            "description": "Records to skip before this page."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HookPage"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid request parameters or body.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid bearer token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Origin or operation forbidden.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "operatorToken": []
+          }
+        ],
+        "x-codeSamples": [
+          {
+            "lang": "curl",
+            "label": "curl",
+            "source": "curl --request GET \"${MODEMBOX_URL:-http://localhost:8000}/v1/hooks/rules\" \\\n  --header \"Authorization: Bearer ${MODEMBOX_TOKEN}\""
+          }
+        ]
+      }
+    },
+    "/v1/hooks/rules": {
+      "post": {
+        "tags": [
+          "Hooks"
+        ],
+        "summary": "Create a hook rule",
+        "description": "Save a rule that matches an incoming SMS or call event.",
+        "operationId": "create_hook_rule_v1_hooks_rules_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Rule"
+              },
+              "example": {
+                "name": "Forward incoming SMS",
+                "enabled": false,
+                "trigger": "sms.received",
+                "actions": [
+                  {
+                    "type": "sms",
+                    "recipient": "+12025550123"
+                  }
+                ]
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HookRule"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Hook, destination, or source record not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Hook configuration limit reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid request parameters or body.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid bearer token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Origin or operation forbidden.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Missing or invalid body length, or body too large.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "operatorToken": []
+          }
+        ],
+        "x-codeSamples": [
+          {
+            "lang": "curl",
+            "label": "curl",
+            "source": "curl --request POST \"${MODEMBOX_URL:-http://localhost:8000}/v1/hooks/rules\" \\\n  --header \"Authorization: Bearer ${MODEMBOX_TOKEN}\" \\\n  --header 'Content-Type: application/json' \\\n  --data '{\n  \"name\": \"Forward incoming SMS\",\n  \"enabled\": false,\n  \"trigger\": \"sms.received\",\n  \"actions\": [\n    {\n      \"type\": \"sms\",\n      \"recipient\": \"+12025550123\"\n    }\n  ]\n}'"
+          }
+        ]
+      }
+    },
+    "/v1/hooks/rules/{key}": {
+      "put": {
+        "tags": [
+          "Hooks"
+        ],
+        "summary": "Replace a hook rule",
+        "description": "Replace a rule. Disabling it cancels queued actions.",
+        "operationId": "replace_hook_rule_v1_hooks_rules__key__put",
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "description": "Numeric rule or destination ID.",
+              "title": "Key"
+            },
+            "description": "Numeric rule or destination ID."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Rule"
+              },
+              "example": {
+                "name": "Forward incoming SMS",
+                "enabled": false,
+                "trigger": "sms.received",
+                "actions": [
+                  {
+                    "type": "sms",
+                    "recipient": "+12025550123"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HookRule"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Hook, destination, or source record not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid request parameters or body.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid bearer token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Origin or operation forbidden.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Missing or invalid body length, or body too large.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "operatorToken": []
+          }
+        ],
+        "x-codeSamples": [
+          {
+            "lang": "curl",
+            "label": "curl",
+            "source": "curl --request PUT \"${MODEMBOX_URL:-http://localhost:8000}/v1/hooks/rules/1\" \\\n  --header \"Authorization: Bearer ${MODEMBOX_TOKEN}\" \\\n  --header 'Content-Type: application/json' \\\n  --data '{\n  \"name\": \"Forward incoming SMS\",\n  \"enabled\": false,\n  \"trigger\": \"sms.received\",\n  \"actions\": [\n    {\n      \"type\": \"sms\",\n      \"recipient\": \"+12025550123\"\n    }\n  ]\n}'"
+          }
+        ]
+      }
+    },
+    "/v1/hooks/destinations": {
+      "post": {
+        "tags": [
+          "Hooks"
+        ],
+        "summary": "Create a webhook destination",
+        "description": "Save an HTTP destination. The response omits header values and signing keys.",
+        "operationId": "create_hook_destination_v1_hooks_destinations_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Destination"
+              },
+              "example": {
+                "name": "Example webhook",
+                "url": "https://example.invalid/hooks/modembox"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HookDestination"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Hook configuration limit reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid request parameters or body.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid bearer token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Origin or operation forbidden.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Missing or invalid body length, or body too large.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "operatorToken": []
+          }
+        ],
+        "x-codeSamples": [
+          {
+            "lang": "curl",
+            "label": "curl",
+            "source": "curl --request POST \"${MODEMBOX_URL:-http://localhost:8000}/v1/hooks/destinations\" \\\n  --header \"Authorization: Bearer ${MODEMBOX_TOKEN}\" \\\n  --header 'Content-Type: application/json' \\\n  --data '{\n  \"name\": \"Example webhook\",\n  \"url\": \"https://example.invalid/hooks/modembox\"\n}'"
+          }
+        ]
+      }
+    },
+    "/v1/hooks/destinations/{key}": {
+      "put": {
+        "tags": [
+          "Hooks"
+        ],
+        "summary": "Replace a webhook destination",
+        "description": "Replace an HTTP destination and cancel queued deliveries for it.",
+        "operationId": "replace_hook_destination_v1_hooks_destinations__key__put",
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "description": "Numeric rule or destination ID.",
+              "title": "Key"
+            },
+            "description": "Numeric rule or destination ID."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Destination"
+              },
+              "example": {
+                "name": "Example webhook",
+                "url": "https://example.invalid/hooks/modembox"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HookDestination"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Hook, destination, or source record not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid request parameters or body.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid bearer token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Origin or operation forbidden.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Missing or invalid body length, or body too large.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "operatorToken": []
+          }
+        ],
+        "x-codeSamples": [
+          {
+            "lang": "curl",
+            "label": "curl",
+            "source": "curl --request PUT \"${MODEMBOX_URL:-http://localhost:8000}/v1/hooks/destinations/1\" \\\n  --header \"Authorization: Bearer ${MODEMBOX_TOKEN}\" \\\n  --header 'Content-Type: application/json' \\\n  --data '{\n  \"name\": \"Example webhook\",\n  \"url\": \"https://example.invalid/hooks/modembox\"\n}'"
+          }
+        ]
+      }
+    },
+    "/v1/hooks/{resource}/{key}": {
+      "delete": {
+        "tags": [
+          "Hooks"
+        ],
+        "summary": "Delete a hook rule or destination",
+        "description": "Delete the record and cancel queued actions that reference it.",
+        "operationId": "delete_hook_v1_hooks__resource___key__delete",
+        "parameters": [
+          {
+            "name": "resource",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "enum": [
+                "rules",
+                "destinations"
+              ],
+              "type": "string",
+              "title": "Resource"
+            }
+          },
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "description": "Numeric rule or destination ID.",
+              "title": "Key"
+            },
+            "description": "Numeric rule or destination ID."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HookDeletion"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Hook, destination, or source record not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid request parameters or body.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid bearer token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Origin or operation forbidden.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "operatorToken": []
+          }
+        ],
+        "x-codeSamples": [
+          {
+            "lang": "curl",
+            "label": "curl",
+            "source": "curl --request DELETE \"${MODEMBOX_URL:-http://localhost:8000}/v1/hooks/rules/1\" \\\n  --header \"Authorization: Bearer ${MODEMBOX_TOKEN}\""
+          }
+        ]
+      }
+    },
+    "/v1/hooks/preview": {
+      "post": {
+        "tags": [
+          "Hooks"
+        ],
+        "summary": "Preview a hook rule",
+        "description": "Evaluate a draft rule against one incoming message ID or call ID without running its actions.",
+        "operationId": "preview_hook_v1_hooks_preview_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Preview"
+              },
+              "example": {
+                "rule": {
+                  "name": "Forward incoming SMS",
+                  "enabled": false,
+                  "trigger": "sms.received",
+                  "actions": [
+                    {
+                      "type": "sms",
+                      "recipient": "+12025550123"
+                    }
+                  ]
+                },
+                "messageId": 1
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HookPreview"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Hook, destination, or source record not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid request parameters or body.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid bearer token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Origin or operation forbidden.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Missing or invalid body length, or body too large.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "operatorToken": []
+          }
+        ],
+        "x-codeSamples": [
+          {
+            "lang": "curl",
+            "label": "curl",
+            "source": "curl --request POST \"${MODEMBOX_URL:-http://localhost:8000}/v1/hooks/preview\" \\\n  --header \"Authorization: Bearer ${MODEMBOX_TOKEN}\" \\\n  --header 'Content-Type: application/json' \\\n  --data '{\n  \"rule\": {\n    \"name\": \"Forward incoming SMS\",\n    \"enabled\": false,\n    \"trigger\": \"sms.received\",\n    \"actions\": [\n      {\n        \"type\": \"sms\",\n        \"recipient\": \"+12025550123\"\n      }\n    ]\n  },\n  \"messageId\": 1\n}'"
+          }
+        ]
+      }
+    },
+    "/v1/messages": {
+      "get": {
+        "tags": [
+          "SMS"
+        ],
+        "summary": "List SMS messages",
+        "description": "Read messages in descending ID order. Pass the returned next cursor as before on your next request.",
+        "operationId": "messages_v1_messages_get",
+        "parameters": [
+          {
+            "name": "modem",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by modem ID.",
+              "title": "Modem"
+            },
+            "description": "Filter by modem ID."
+          },
+          {
+            "name": "before",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Return IDs below this cursor.",
+              "title": "Before"
+            },
+            "description": "Return IDs below this cursor."
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "description": "Maximum records to return.",
+              "default": 50,
+              "title": "Limit"
+            },
+            "description": "Maximum records to return."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessagePage"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid request parameters or body.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid bearer token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Origin or operation forbidden.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "operatorToken": []
+          }
+        ],
+        "x-codeSamples": [
+          {
+            "lang": "curl",
+            "label": "curl",
+            "source": "curl --request GET \"${MODEMBOX_URL:-http://localhost:8000}/v1/messages?limit=10\" \\\n  --header \"Authorization: Bearer ${MODEMBOX_TOKEN}\""
+          }
+        ]
+      }
+    },
+    "/v1/messages/{message_id}": {
+      "get": {
+        "tags": [
+          "SMS"
+        ],
+        "summary": "Get an SMS message",
+        "description": "Read one message, including per-segment status for a multipart send.",
+        "operationId": "message_v1_messages__message_id__get",
+        "parameters": [
+          {
+            "name": "message_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "description": "Numeric message ID.",
+              "title": "Message Id"
+            },
+            "description": "Numeric message ID."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Message not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid request parameters or body.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid bearer token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Origin or operation forbidden.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "operatorToken": []
+          }
+        ],
+        "x-codeSamples": [
+          {
+            "lang": "curl",
+            "label": "curl",
+            "source": "curl --request GET \"${MODEMBOX_URL:-http://localhost:8000}/v1/messages/1\" \\\n  --header \"Authorization: Bearer ${MODEMBOX_TOKEN}\""
+          }
+        ]
+      }
+    },
+    "/v1/modems/{modem_id}/sms": {
+      "post": {
+        "tags": [
+          "SMS"
+        ],
+        "summary": "Send an SMS",
+        "description": "Send a text through a modem. Check the outbox before retrying a partial or uncertain send.",
+        "operationId": "send_sms_v1_modems__modem_id__sms_post",
+        "parameters": [
+          {
+            "name": "modem_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Modem ID returned by GET /v1/modems.",
+              "title": "Modem Id"
+            },
+            "description": "Modem ID returned by GET /v1/modems."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Sms"
+              },
+              "example": {
+                "number": "+12025550123",
+                "text": "Example message"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Modem not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The modem or call is in a state that prevents this operation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The modem is offline or failed to complete the command.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid request parameters or body.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid bearer token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Origin or operation forbidden.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Missing or invalid body length, or body too large.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "operatorToken": []
+          }
+        ],
+        "x-codeSamples": [
+          {
+            "lang": "curl",
+            "label": "curl",
+            "source": "curl --request POST \"${MODEMBOX_URL:-http://localhost:8000}/v1/modems/${MODEMBOX_MODEM_ID}/sms\" \\\n  --header \"Authorization: Bearer ${MODEMBOX_TOKEN}\" \\\n  --header 'Content-Type: application/json' \\\n  --data '{\n  \"number\": \"+12025550123\",\n  \"text\": \"Example message\"\n}'"
+          }
+        ]
+      }
+    },
+    "/v1/modems/{modem_id}/pin": {
+      "post": {
+        "tags": [
+          "Modems"
+        ],
+        "summary": "Unlock a SIM",
+        "description": "Submit the SIM PIN. Saving it requires a successful unlock and a usable SIM identity.",
+        "operationId": "pin_v1_modems__modem_id__pin_post",
+        "parameters": [
+          {
+            "name": "modem_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Modem ID returned by GET /v1/modems.",
+              "title": "Modem Id"
+            },
+            "description": "Modem ID returned by GET /v1/modems."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Pin"
+              },
+              "example": {
+                "pin": "0000",
+                "remember": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModemState"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Modem not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The modem or call is in a state that prevents this operation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The modem is offline or failed to complete the command.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid request parameters or body.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid bearer token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Origin or operation forbidden.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Missing or invalid body length, or body too large.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "operatorToken": []
+          }
+        ],
+        "x-codeSamples": [
+          {
+            "lang": "curl",
+            "label": "curl",
+            "source": "curl --request POST \"${MODEMBOX_URL:-http://localhost:8000}/v1/modems/${MODEMBOX_MODEM_ID}/pin\" \\\n  --header \"Authorization: Bearer ${MODEMBOX_TOKEN}\" \\\n  --header 'Content-Type: application/json' \\\n  --data '{\n  \"pin\": \"0000\",\n  \"remember\": false\n}'"
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "Modems"
+        ],
+        "summary": "Forget a saved SIM PIN",
+        "description": "Remove the stored PIN for the current SIM and return the modem state.",
+        "operationId": "forget_pin_v1_modems__modem_id__pin_delete",
+        "parameters": [
+          {
+            "name": "modem_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Modem ID returned by GET /v1/modems.",
+              "title": "Modem Id"
+            },
+            "description": "Modem ID returned by GET /v1/modems."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModemState"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Modem not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The modem or call is in a state that prevents this operation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The modem is offline or failed to complete the command.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid request parameters or body.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid bearer token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Origin or operation forbidden.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "operatorToken": []
+          }
+        ],
+        "x-codeSamples": [
+          {
+            "lang": "curl",
+            "label": "curl",
+            "source": "curl --request DELETE \"${MODEMBOX_URL:-http://localhost:8000}/v1/modems/${MODEMBOX_MODEM_ID}/pin\" \\\n  --header \"Authorization: Bearer ${MODEMBOX_TOKEN}\""
+          }
+        ]
+      }
+    },
+    "/v1/modems/{modem_id}/calls": {
+      "post": {
+        "tags": [
+          "Voice"
+        ],
+        "summary": "Place a call",
+        "description": "Dial a phone number on a modem with voice support.",
+        "operationId": "dial_v1_modems__modem_id__calls_post",
+        "parameters": [
+          {
+            "name": "modem_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Modem ID returned by GET /v1/modems.",
+              "title": "Modem Id"
+            },
+            "description": "Modem ID returned by GET /v1/modems."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Phone"
+              },
+              "example": {
+                "number": "+12025550123"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModemState"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Modem not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The modem or call is in a state that prevents this operation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The modem is offline or failed to complete the command.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid request parameters or body.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid bearer token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Origin or operation forbidden.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Missing or invalid body length, or body too large.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "operatorToken": []
+          }
+        ],
+        "x-codeSamples": [
+          {
+            "lang": "curl",
+            "label": "curl",
+            "source": "curl --request POST \"${MODEMBOX_URL:-http://localhost:8000}/v1/modems/${MODEMBOX_MODEM_ID}/calls\" \\\n  --header \"Authorization: Bearer ${MODEMBOX_TOKEN}\" \\\n  --header 'Content-Type: application/json' \\\n  --data '{\n  \"number\": \"+12025550123\"\n}'"
+          }
+        ]
+      }
+    },
+    "/v1/modems/{modem_id}/calls/answer": {
+      "post": {
+        "tags": [
+          "Voice"
+        ],
+        "summary": "Answer an incoming call",
+        "description": "Answer the ringing call. Send Content-Length: 0 when the request has no body.",
+        "operationId": "answer_v1_modems__modem_id__calls_answer_post",
+        "parameters": [
+          {
+            "name": "modem_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Modem ID returned by GET /v1/modems.",
+              "title": "Modem Id"
+            },
+            "description": "Modem ID returned by GET /v1/modems."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModemState"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Modem not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The modem or call is in a state that prevents this operation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The modem is offline or failed to complete the command.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid request parameters or body.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid bearer token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Origin or operation forbidden.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Missing or invalid body length, or body too large.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "operatorToken": []
+          }
+        ],
+        "x-codeSamples": [
+          {
+            "lang": "curl",
+            "label": "curl",
+            "source": "curl --request POST \"${MODEMBOX_URL:-http://localhost:8000}/v1/modems/${MODEMBOX_MODEM_ID}/calls/answer\" \\\n  --header \"Authorization: Bearer ${MODEMBOX_TOKEN}\" \\\n  --data ''"
+          }
+        ]
+      }
+    },
+    "/v1/modems/{modem_id}/calls/current": {
+      "delete": {
+        "tags": [
+          "Voice"
+        ],
+        "summary": "Hang up a call",
+        "description": "End the current call and return the modem state.",
+        "operationId": "hangup_v1_modems__modem_id__calls_current_delete",
+        "parameters": [
+          {
+            "name": "modem_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Modem ID returned by GET /v1/modems.",
+              "title": "Modem Id"
+            },
+            "description": "Modem ID returned by GET /v1/modems."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModemState"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Modem not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The modem or call is in a state that prevents this operation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The modem is offline or failed to complete the command.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid request parameters or body.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid bearer token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Origin or operation forbidden.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "operatorToken": []
+          }
+        ],
+        "x-codeSamples": [
+          {
+            "lang": "curl",
+            "label": "curl",
+            "source": "curl --request DELETE \"${MODEMBOX_URL:-http://localhost:8000}/v1/modems/${MODEMBOX_MODEM_ID}/calls/current\" \\\n  --header \"Authorization: Bearer ${MODEMBOX_TOKEN}\""
+          }
+        ]
+      }
+    },
+    "/v1/modems/{modem_id}/audio": {
+      "post": {
+        "tags": [
+          "Voice"
+        ],
+        "summary": "Play a WAV in a call",
+        "description": "Play a clip into the active call on a modem with call audio support.",
+        "operationId": "play_v1_modems__modem_id__audio_post",
+        "parameters": [
+          {
+            "name": "modem_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Modem ID returned by GET /v1/modems.",
+              "title": "Modem Id"
+            },
+            "description": "Modem ID returned by GET /v1/modems."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Clip"
+              },
+              "example": {
+                "wav": "UklGRiYAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YQIAAAAAAA=="
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModemState"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Modem not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The modem or call is in a state that prevents this operation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The modem is offline or failed to complete the command.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid request parameters or body.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid bearer token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Origin or operation forbidden.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Missing or invalid body length, or body too large.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "operatorToken": []
+          }
+        ],
+        "x-codeSamples": [
+          {
+            "lang": "curl",
+            "label": "curl",
+            "source": "curl --request POST \"${MODEMBOX_URL:-http://localhost:8000}/v1/modems/${MODEMBOX_MODEM_ID}/audio\" \\\n  --header \"Authorization: Bearer ${MODEMBOX_TOKEN}\" \\\n  --header 'Content-Type: application/json' \\\n  --data '{\n  \"wav\": \"UklGRiYAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YQIAAAAAAA==\"\n}'"
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "Voice"
+        ],
+        "summary": "Stop WAV playback",
+        "description": "Stop the active clip and return the modem state.",
+        "operationId": "stop_audio_v1_modems__modem_id__audio_delete",
+        "parameters": [
+          {
+            "name": "modem_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Modem ID returned by GET /v1/modems.",
+              "title": "Modem Id"
+            },
+            "description": "Modem ID returned by GET /v1/modems."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModemState"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Modem not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The modem or call is in a state that prevents this operation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The modem is offline or failed to complete the command.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid request parameters or body.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid bearer token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Origin or operation forbidden.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "operatorToken": []
+          }
+        ],
+        "x-codeSamples": [
+          {
+            "lang": "curl",
+            "label": "curl",
+            "source": "curl --request DELETE \"${MODEMBOX_URL:-http://localhost:8000}/v1/modems/${MODEMBOX_MODEM_ID}/audio\" \\\n  --header \"Authorization: Bearer ${MODEMBOX_TOKEN}\""
+          }
+        ]
+      },
+      "get": {
+        "tags": [
+          "Voice"
+        ],
+        "summary": "Capture recent caller audio",
+        "description": "Return recent caller audio as a base64 WAV from the in-memory call buffer.",
+        "operationId": "capture_v1_modems__modem_id__audio_get",
+        "parameters": [
+          {
+            "name": "modem_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Modem ID returned by GET /v1/modems.",
+              "title": "Modem Id"
+            },
+            "description": "Modem ID returned by GET /v1/modems."
+          },
+          {
+            "name": "seconds",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 10,
+              "minimum": 1,
+              "description": "Seconds of recent caller audio.",
+              "default": 5,
+              "title": "Seconds"
+            },
+            "description": "Seconds of recent caller audio."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AudioCapture"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Modem not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The modem or call is in a state that prevents this operation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid request parameters or body.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid bearer token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Origin or operation forbidden.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "operatorToken": []
+          }
+        ],
+        "x-codeSamples": [
+          {
+            "lang": "curl",
+            "label": "curl",
+            "source": "curl --request GET \"${MODEMBOX_URL:-http://localhost:8000}/v1/modems/${MODEMBOX_MODEM_ID}/audio\" \\\n  --header \"Authorization: Bearer ${MODEMBOX_TOKEN}\""
+          }
+        ]
+      }
+    },
+    "/v1/modems/{modem_id}/at": {
+      "post": {
+        "tags": [
+          "Modems"
+        ],
+        "summary": "Run an AT command",
+        "description": "Run one allowed command. Raw writes require MODEMBOX_ALLOW_RAW_AT and are disabled during calls.",
+        "operationId": "at_v1_modems__modem_id__at_post",
+        "parameters": [
+          {
+            "name": "modem_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Modem ID returned by GET /v1/modems.",
+              "title": "Modem Id"
+            },
+            "description": "Modem ID returned by GET /v1/modems."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Command"
+              },
+              "example": {
+                "command": "AT+CSQ"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AtReply"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Modem not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The modem or call is in a state that prevents this operation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The modem is offline or failed to complete the command.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid request parameters or body.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid bearer token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Origin or operation forbidden.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Missing or invalid body length, or body too large.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "operatorToken": []
+          }
+        ],
+        "x-codeSamples": [
+          {
+            "lang": "curl",
+            "label": "curl",
+            "source": "curl --request POST \"${MODEMBOX_URL:-http://localhost:8000}/v1/modems/${MODEMBOX_MODEM_ID}/at\" \\\n  --header \"Authorization: Bearer ${MODEMBOX_TOKEN}\" \\\n  --header 'Content-Type: application/json' \\\n  --data '{\n  \"command\": \"AT+CSQ\"\n}'"
+          }
+        ]
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AtReply": {
+        "properties": {
+          "lines": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Lines"
+          },
+          "terminal": {
+            "type": "string",
+            "title": "Terminal"
+          }
+        },
+        "type": "object",
+        "required": [
+          "lines",
+          "terminal"
+        ],
+        "title": "AtReply"
+      },
+      "AudioCapture": {
+        "properties": {
+          "wav": {
+            "type": "string",
+            "title": "Wav"
+          },
+          "format": {
+            "type": "string",
+            "title": "Format"
+          }
+        },
+        "type": "object",
+        "required": [
+          "wav",
+          "format"
+        ],
+        "title": "AudioCapture"
+      },
+      "AuthMode": {
+        "properties": {
+          "tokenRequired": {
+            "type": "boolean",
+            "title": "Tokenrequired"
+          }
+        },
+        "type": "object",
+        "required": [
+          "tokenRequired"
+        ],
+        "title": "AuthMode"
+      },
+      "Clip": {
+        "properties": {
+          "wav": {
+            "type": "string",
+            "maxLength": 650000,
+            "title": "Wav",
+            "description": "Base64 mono 8 kHz PCM16 WAV, up to 30 seconds."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "wav"
+        ],
+        "title": "Clip"
+      },
+      "Command": {
+        "properties": {
+          "command": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 2,
+            "title": "Command",
+            "description": "One AT command without line breaks."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "command"
+        ],
+        "title": "Command"
+      },
+      "Condition": {
+        "properties": {
+          "field": {
+            "type": "string",
+            "enum": [
+              "peer",
+              "text",
+              "outcome",
+              "callerId"
+            ],
+            "title": "Field"
+          },
+          "op": {
+            "type": "string",
+            "enum": [
+              "equals",
+              "contains",
+              "startsWith",
+              "in"
+            ],
+            "title": "Op"
+          },
+          "values": {
+            "items": {
+              "type": "string",
+              "maxLength": 256,
+              "minLength": 1
+            },
+            "type": "array",
+            "maxItems": 32,
+            "minItems": 1,
+            "title": "Values"
+          },
+          "caseSensitive": {
+            "type": "boolean",
+            "title": "Casesensitive",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "field",
+          "op",
+          "values"
+        ],
+        "title": "Condition"
+      },
+      "Decline": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "decline",
+            "title": "Type"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "type"
+        ],
+        "title": "Decline"
+      },
+      "Destination": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled",
+            "default": true
+          },
+          "url": {
+            "type": "string",
+            "maxLength": 2048,
+            "minLength": 8,
+            "title": "Url"
+          },
+          "method": {
+            "type": "string",
+            "enum": [
+              "GET",
+              "HEAD",
+              "POST",
+              "PUT",
+              "PATCH",
+              "DELETE"
+            ],
+            "title": "Method",
+            "default": "POST"
+          },
+          "headers": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object",
+                "maxProperties": 16
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Headers"
+          },
+          "signingKey": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 512
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Signingkey"
+          },
+          "privateAddress": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Privateaddress"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name",
+          "url"
+        ],
+        "title": "Destination"
+      },
+      "GatewayState": {
+        "properties": {
+          "modems": {
+            "items": {
+              "$ref": "#/components/schemas/ModemState"
+            },
+            "type": "array",
+            "title": "Modems"
+          },
+          "messages": {
+            "items": {
+              "$ref": "#/components/schemas/Message"
+            },
+            "type": "array",
+            "title": "Messages"
+          },
+          "activity": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Activity"
+          },
+          "hooks": {
+            "additionalProperties": {
+              "items": {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "type": "object",
+            "title": "Hooks"
+          }
+        },
+        "type": "object",
+        "required": [
+          "modems",
+          "messages",
+          "activity",
+          "hooks"
+        ],
+        "title": "GatewayState"
+      },
+      "Health": {
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true,
+            "title": "Ok"
+          }
+        },
+        "type": "object",
+        "required": [
+          "ok"
+        ],
+        "title": "Health"
+      },
+      "HookDeletion": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "deleted": {
+            "type": "boolean",
+            "const": true,
+            "title": "Deleted"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "deleted"
+        ],
+        "title": "HookDeletion"
+      },
+      "HookDestination": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "method": {
+            "type": "string",
+            "title": "Method"
+          },
+          "privateAddress": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Privateaddress"
+          },
+          "hasHeaders": {
+            "type": "boolean",
+            "title": "Hasheaders"
+          },
+          "hasSigningKey": {
+            "type": "boolean",
+            "title": "Hassigningkey"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "enabled",
+          "url",
+          "method",
+          "privateAddress",
+          "hasHeaders",
+          "hasSigningKey"
+        ],
+        "title": "HookDestination"
+      },
+      "HookPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Items",
+            "description": "Records of the requested hook resource."
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit"
+          },
+          "offset": {
+            "type": "integer",
+            "title": "Offset"
+          },
+          "hasMore": {
+            "type": "boolean",
+            "title": "Hasmore"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "limit",
+          "offset",
+          "hasMore"
+        ],
+        "title": "HookPage"
+      },
+      "HookPreview": {
+        "properties": {
+          "matches": {
+            "type": "boolean",
+            "title": "Matches"
+          },
+          "actions": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Actions",
+            "description": "Actions that would run for the source record."
+          }
+        },
+        "type": "object",
+        "required": [
+          "matches",
+          "actions"
+        ],
+        "title": "HookPreview"
+      },
+      "HookRule": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled",
+            "default": true
+          },
+          "trigger": {
+            "type": "string",
+            "enum": [
+              "sms.received",
+              "call.incoming",
+              "call.ended"
+            ],
+            "title": "Trigger"
+          },
+          "modem": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 120
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Modem"
+          },
+          "match": {
+            "type": "string",
+            "enum": [
+              "all",
+              "any"
+            ],
+            "title": "Match",
+            "default": "all"
+          },
+          "conditions": {
+            "items": {
+              "$ref": "#/components/schemas/Condition"
+            },
+            "type": "array",
+            "maxItems": 16,
+            "title": "Conditions"
+          },
+          "actions": {
+            "items": {
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/SendSms"
+                },
+                {
+                  "$ref": "#/components/schemas/Webhook"
+                },
+                {
+                  "$ref": "#/components/schemas/Decline"
+                }
+              ],
+              "discriminator": {
+                "propertyName": "type",
+                "mapping": {
+                  "decline": "#/components/schemas/Decline",
+                  "http": "#/components/schemas/Webhook",
+                  "sms": "#/components/schemas/SendSms"
+                }
+              }
+            },
+            "type": "array",
+            "maxItems": 8,
+            "minItems": 1,
+            "title": "Actions"
+          },
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name",
+          "trigger",
+          "actions",
+          "id"
+        ],
+        "title": "HookRule"
+      },
+      "Message": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "modem": {
+            "type": "string",
+            "title": "Modem"
+          },
+          "direction": {
+            "type": "string",
+            "title": "Direction"
+          },
+          "peer": {
+            "type": "string",
+            "title": "Peer"
+          },
+          "body": {
+            "type": "string",
+            "title": "Body"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "created": {
+            "type": "string",
+            "title": "Created",
+            "description": "UTC timestamp."
+          },
+          "parts": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/MessagePart"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parts",
+            "description": "Present on multipart outgoing message details."
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "modem",
+          "direction",
+          "peer",
+          "body",
+          "status",
+          "created"
+        ],
+        "title": "Message"
+      },
+      "MessagePage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/Message"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "next": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next",
+            "description": "Cursor for the next page, or null on the last page."
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "next"
+        ],
+        "title": "MessagePage"
+      },
+      "MessagePart": {
+        "properties": {
+          "part": {
+            "type": "integer",
+            "title": "Part"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          }
+        },
+        "type": "object",
+        "required": [
+          "part",
+          "status"
+        ],
+        "title": "MessagePart"
+      },
+      "ModemState": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "connected": {
+            "type": "boolean",
+            "title": "Connected"
+          },
+          "calls": {
+            "items": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Calls"
+          },
+          "capabilities": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "string"
+                }
+              ]
+            },
+            "type": "object",
+            "title": "Capabilities"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "id",
+          "connected",
+          "calls",
+          "capabilities"
+        ],
+        "title": "ModemState"
+      },
+      "Phone": {
+        "properties": {
+          "number": {
+            "type": "string",
+            "pattern": "^\\+?[0-9]{3,20}$",
+            "title": "Number",
+            "description": "Recipient or dialed phone number."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "number"
+        ],
+        "title": "Phone"
+      },
+      "Pin": {
+        "properties": {
+          "pin": {
+            "type": "string",
+            "pattern": "^[0-9]{4,8}$",
+            "title": "Pin",
+            "description": "Current SIM PIN."
+          },
+          "remember": {
+            "type": "boolean",
+            "title": "Remember",
+            "description": "Save the PIN after a successful unlock.",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "pin"
+        ],
+        "title": "Pin"
+      },
+      "Preview": {
+        "properties": {
+          "rule": {
+            "$ref": "#/components/schemas/Rule"
+          },
+          "messageId": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Messageid"
+          },
+          "callId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 80,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Callid"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "rule"
+        ],
+        "title": "Preview"
+      },
+      "Rule": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled",
+            "default": true
+          },
+          "trigger": {
+            "type": "string",
+            "enum": [
+              "sms.received",
+              "call.incoming",
+              "call.ended"
+            ],
+            "title": "Trigger"
+          },
+          "modem": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 120
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Modem"
+          },
+          "match": {
+            "type": "string",
+            "enum": [
+              "all",
+              "any"
+            ],
+            "title": "Match",
+            "default": "all"
+          },
+          "conditions": {
+            "items": {
+              "$ref": "#/components/schemas/Condition"
+            },
+            "type": "array",
+            "maxItems": 16,
+            "title": "Conditions"
+          },
+          "actions": {
+            "items": {
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/SendSms"
+                },
+                {
+                  "$ref": "#/components/schemas/Webhook"
+                },
+                {
+                  "$ref": "#/components/schemas/Decline"
+                }
+              ],
+              "discriminator": {
+                "propertyName": "type",
+                "mapping": {
+                  "decline": "#/components/schemas/Decline",
+                  "http": "#/components/schemas/Webhook",
+                  "sms": "#/components/schemas/SendSms"
+                }
+              }
+            },
+            "type": "array",
+            "maxItems": 8,
+            "minItems": 1,
+            "title": "Actions"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name",
+          "trigger",
+          "actions"
+        ],
+        "title": "Rule"
+      },
+      "SendSms": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "sms",
+            "title": "Type"
+          },
+          "recipient": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "\\+?[0-9]{3,20}"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recipient"
+          },
+          "modem": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 120
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Modem"
+          },
+          "template": {
+            "type": "string",
+            "maxLength": 18000,
+            "minLength": 1,
+            "title": "Template",
+            "default": "{{text}}"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "type"
+        ],
+        "title": "SendSms"
+      },
+      "Sms": {
+        "properties": {
+          "number": {
+            "type": "string",
+            "pattern": "^\\+?[0-9]{3,20}$",
+            "title": "Number",
+            "description": "Recipient or dialed phone number."
+          },
+          "text": {
+            "type": "string",
+            "maxLength": 16830,
+            "minLength": 1,
+            "title": "Text",
+            "description": "SMS text."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "number",
+          "text"
+        ],
+        "title": "Sms"
+      },
+      "Webhook": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "http",
+            "title": "Type"
+          },
+          "destination": {
+            "type": "integer",
+            "exclusiveMinimum": 0.0,
+            "title": "Destination"
+          },
+          "fields": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "id",
+                    "type",
+                    "modem",
+                    "time",
+                    "peer",
+                    "text",
+                    "outcome",
+                    "callerId",
+                    "messageId",
+                    "callId"
+                  ]
+                },
+                "type": "array",
+                "maxItems": 10,
+                "minItems": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fields"
+          },
+          "jsonBody": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object",
+                "maxProperties": 32
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Jsonbody"
+          },
+          "textBody": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 18000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Textbody"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "type",
+          "destination"
+        ],
+        "title": "Webhook"
+      },
+      "ApiError": {
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "ApiError",
+        "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "operatorToken": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Use the operator token unless the server disables authentication."
+      }
+    }
+  }
+}

@@ -388,6 +388,28 @@ def test_mcp_http_and_websocket_authorization(tmp_path):
             assert socket.receive()["code"] == 4401
 
 
+def test_openapi_describes_auth_and_message_pagination(tmp_path):
+    app = create_app(Config(TOKEN, tmp_path, Path("web/build")))
+    with TestClient(app) as client:
+        response = client.get("/openapi.json")
+        assert response.status_code == 200
+        schema = response.json()
+        assert TOKEN not in response.text
+        assert "security" not in schema["paths"]["/healthz"]["get"]
+        messages = schema["paths"]["/v1/messages"]["get"]
+        assert messages["security"] == [{"operatorToken": []}]
+        assert messages["responses"]["422"]["content"]["application/json"]["schema"] == {
+            "$ref": "#/components/schemas/ApiError"
+        }
+        params = {parameter["name"]: parameter for parameter in messages["parameters"]}
+        assert params["limit"]["schema"]["maximum"] == 200
+        assert params["limit"]["description"]
+        assert "?limit=10" in messages["x-codeSamples"][0]["source"]
+        invalid = client.get("/v1/messages?limit=201", headers=HEADERS)
+        assert invalid.status_code == 422
+        assert invalid.json()["code"] == "INVALID_REQUEST"
+
+
 @pytest.mark.unit
 def test_auth_opt_out_requires_explicit_true(monkeypatch):
     monkeypatch.delenv("MODEMBOX_TOKEN", raising=False)

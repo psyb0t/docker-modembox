@@ -4,13 +4,31 @@ from contextlib import asynccontextmanager, suppress
 from typing import Annotated, Literal
 from uuid import uuid4
 
-from fastapi import FastAPI, Query, Request, WebSocket, WebSocketDisconnect
+from fastapi import Path, Query, Request, WebSocket, WebSocketDisconnect
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field
 from starlette.requests import HTTPConnection
 
+from .api_docs import (
+    AtReply,
+    AudioCapture,
+    AuthMode,
+    GatewayState,
+    Health,
+    HookDeletion,
+    HookDestination,
+    HookPage,
+    HookPreview,
+    HookRule,
+    Message,
+    MessagePage,
+    ModemBoxAPI,
+    ModemState,
+    error_response,
+    success,
+)
 from .config import Config
 from .errors import OperationError
 from .hook_models import Destination, Preview, Rule
@@ -22,30 +40,48 @@ from .sms import MAX_SMS_CHARACTERS
 MAX_BODY = 1_048_576
 QUEUE_SIZE = 64
 
+ModemID = Annotated[str, Path(description="Modem ID returned by GET /v1/modems.")]
+HookID = Annotated[int, Path(description="Numeric rule or destination ID.")]
+PageLimit = Annotated[int, Query(ge=1, le=200, description="Maximum records to return.")]
+MODEM_RESPONSES = {
+    404: error_response("Modem not found."),
+    409: error_response("The modem or call is in a state that prevents this operation."),
+    503: error_response("The modem is offline or failed to complete the command."),
+}
+MODEM_STATE_RESPONSES = MODEM_RESPONSES | success(ModemState)
+HOOK_NOT_FOUND = {404: error_response("Hook, destination, or source record not found.")}
+HOOK_LIMIT = {409: error_response("Hook configuration limit reached.")}
+
 
 class Input(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
 class Phone(Input):
-    number: str = Field(pattern=r"^\+?[0-9]{3,20}$")
+    number: str = Field(
+        pattern=r"^\+?[0-9]{3,20}$", description="Recipient or dialed phone number."
+    )
 
 
 class Sms(Phone):
-    text: str = Field(min_length=1, max_length=MAX_SMS_CHARACTERS)
+    text: str = Field(min_length=1, max_length=MAX_SMS_CHARACTERS, description="SMS text.")
 
 
 class Pin(Input):
-    pin: str = Field(pattern=r"^[0-9]{4,8}$")
-    remember: bool = False
+    pin: str = Field(pattern=r"^[0-9]{4,8}$", description="Current SIM PIN.")
+    remember: bool = Field(default=False, description="Save the PIN after a successful unlock.")
 
 
 class Clip(Input):
-    wav: str = Field(max_length=650_000)
+    wav: str = Field(
+        max_length=650_000, description="Base64 mono 8 kHz PCM16 WAV, up to 30 seconds."
+    )
 
 
 class Command(Input):
-    command: str = Field(min_length=2, max_length=128)
+    command: str = Field(
+        min_length=2, max_length=128, description="One AT command without line breaks."
+    )
 
 
 def matches(presented: str, expected: str) -> bool:
@@ -82,8 +118,17 @@ def create_app(config: Config | None = None, *, service: Service | None = None):
         async with gateway.lifecycle(), mcp_app.lifespan(mcp_app):
             yield
 
-    app = FastAPI(
-        title="ModemBox", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None
+    app = ModemBoxAPI(
+        title="ModemBox",
+        version="1.0.0",
+        description=(
+            "Manage USB modems, SMS, calls, and hooks. Protected routes use bearer auth "
+            "by default. Omit the Authorization header when MODEMBOX_DISABLE_AUTH=true."
+        ),
+        servers=[{"url": "http://localhost:8000", "description": "Default local installation"}],
+        lifespan=lifespan,
+        docs_url=None,
+        redoc_url=None,
     )
 
     @app.middleware("http")
@@ -144,113 +189,246 @@ def create_app(config: Config | None = None, *, service: Service | None = None):
             await ws.close(4401)
         return authorized
 
-    @app.get("/healthz")
+    @app.get("/healthz", tags=["Service"], summary="Check liveness", responses=success(Health))
     async def health():
+        """Return whether ModemBox is running."""
         return {"ok": True}
 
-    @app.get("/auth-mode")
+    @app.get(
+        "/auth-mode",
+        tags=["Service"],
+        summary="Check authentication mode",
+        responses=success(AuthMode),
+    )
     async def auth_mode():
+        """Return the token requirement for this instance as tokenRequired."""
         return JSONResponse(
             {"tokenRequired": not config.disable_auth}, headers={"Cache-Control": "no-store"}
         )
 
-    @app.get("/v1/state")
+    @app.get(
+        "/v1/state", tags=["Modems"], summary="Get gateway state", responses=success(GatewayState)
+    )
     async def state():
+        """Read the modem, message, activity, and hook snapshot."""
         return gateway.snapshot()["data"]
 
-    @app.get("/v1/modems")
+    @app.get(
+        "/v1/modems", tags=["Modems"], summary="List modems", responses=success(list[ModemState])
+    )
     async def modems():
+        """Read device IDs, capabilities, SIM status, network state, and calls."""
         return [modem.state for modem in gateway.modems.values()]
 
-    @app.get("/v1/hooks/{resource}")
+    @app.get(
+        "/v1/hooks/{resource}",
+        tags=["Hooks"],
+        summary="List hook records",
+        responses=success(HookPage),
+    )
     async def hook_page(
         resource: Literal["rules", "destinations", "runs", "calls"],
-        limit: Annotated[int, Query(ge=1, le=200)] = 50,
-        offset: Annotated[int, Query(ge=0)] = 0,
+        limit: PageLimit = 50,
+        offset: Annotated[int, Query(ge=0, description="Records to skip before this page.")] = 0,
     ):
+        """List rules, destinations, runs, or incoming calls, newest first."""
         return gateway.hooks.page(resource, limit, offset)
 
-    @app.post("/v1/hooks/rules", status_code=201)
+    @app.post(
+        "/v1/hooks/rules",
+        status_code=201,
+        tags=["Hooks"],
+        summary="Create a hook rule",
+        responses=success(HookRule, 201) | HOOK_NOT_FOUND | HOOK_LIMIT,
+    )
     async def create_hook_rule(rule: Rule):
+        """Save a rule that matches an incoming SMS or call event."""
         return gateway.hooks.save_rule(rule)
 
-    @app.put("/v1/hooks/rules/{key}")
-    async def replace_hook_rule(key: int, rule: Rule):
+    @app.put(
+        "/v1/hooks/rules/{key}",
+        tags=["Hooks"],
+        summary="Replace a hook rule",
+        responses=success(HookRule) | HOOK_NOT_FOUND,
+    )
+    async def replace_hook_rule(key: HookID, rule: Rule):
+        """Replace a rule. Disabling it cancels queued actions."""
         return gateway.hooks.save_rule(rule, key)
 
-    @app.post("/v1/hooks/destinations", status_code=201)
+    @app.post(
+        "/v1/hooks/destinations",
+        status_code=201,
+        tags=["Hooks"],
+        summary="Create a webhook destination",
+        responses=success(HookDestination, 201) | HOOK_LIMIT,
+    )
     async def create_hook_destination(destination: Destination):
+        """Save an HTTP destination. The response omits header values and signing keys."""
         return gateway.hooks.save_destination(destination)
 
-    @app.put("/v1/hooks/destinations/{key}")
-    async def replace_hook_destination(key: int, destination: Destination):
+    @app.put(
+        "/v1/hooks/destinations/{key}",
+        tags=["Hooks"],
+        summary="Replace a webhook destination",
+        responses=success(HookDestination) | HOOK_NOT_FOUND,
+    )
+    async def replace_hook_destination(key: HookID, destination: Destination):
+        """Replace an HTTP destination and cancel queued deliveries for it."""
         return gateway.hooks.save_destination(destination, key)
 
-    @app.delete("/v1/hooks/{resource}/{key}")
-    async def delete_hook(resource: Literal["rules", "destinations"], key: int):
+    @app.delete(
+        "/v1/hooks/{resource}/{key}",
+        tags=["Hooks"],
+        summary="Delete a hook rule or destination",
+        responses=success(HookDeletion) | HOOK_NOT_FOUND,
+    )
+    async def delete_hook(resource: Literal["rules", "destinations"], key: HookID):
+        """Delete the record and cancel queued actions that reference it."""
         return gateway.hooks.remove(resource, key)
 
-    @app.post("/v1/hooks/preview")
+    @app.post(
+        "/v1/hooks/preview",
+        tags=["Hooks"],
+        summary="Preview a hook rule",
+        responses=success(HookPreview) | HOOK_NOT_FOUND,
+    )
     async def preview_hook(preview: Preview):
+        """Evaluate a draft rule against one incoming message ID or call ID without running its actions."""
         return gateway.hooks.preview(preview)
 
-    @app.get("/v1/messages")
+    @app.get(
+        "/v1/messages", tags=["SMS"], summary="List SMS messages", responses=success(MessagePage)
+    )
     async def messages(
-        modem: str | None = None,
-        before: Annotated[int | None, Query(ge=1)] = None,
-        limit: Annotated[int, Query(ge=1, le=200)] = 50,
+        modem: Annotated[str | None, Query(description="Filter by modem ID.")] = None,
+        before: Annotated[
+            int | None, Query(ge=1, description="Return IDs below this cursor.")
+        ] = None,
+        limit: PageLimit = 50,
     ):
+        """Read messages in descending ID order. Pass the returned next cursor as before on your next request."""
         rows = gateway.store.messages(modem, before, limit + 1)
         return {"items": rows[:limit], "next": rows[limit - 1]["id"] if len(rows) > limit else None}
 
-    @app.get("/v1/messages/{message_id}")
-    async def message(message_id: int):
+    @app.get(
+        "/v1/messages/{message_id}",
+        tags=["SMS"],
+        summary="Get an SMS message",
+        responses=success(Message) | {404: error_response("Message not found.")},
+    )
+    async def message(message_id: Annotated[int, Path(description="Numeric message ID.")]):
+        """Read one message, including per-segment status for a multipart send."""
         result = gateway.store.message(message_id)
         if result is None:
             raise OperationError("Message not found", "NOT_FOUND", 404)
         return result
 
-    @app.post("/v1/modems/{modem_id}/sms")
-    async def send_sms(modem_id: str, body: Sms):
+    @app.post(
+        "/v1/modems/{modem_id}/sms",
+        tags=["SMS"],
+        summary="Send an SMS",
+        responses=MODEM_RESPONSES | success(Message),
+    )
+    async def send_sms(modem_id: ModemID, body: Sms):
+        """Send a text through a modem. Check the outbox before retrying a partial or uncertain send."""
         return await gateway.act(modem_id, "http", "send_sms", number=body.number, text=body.text)
 
-    @app.post("/v1/modems/{modem_id}/pin")
-    async def pin(modem_id: str, body: Pin):
+    @app.post(
+        "/v1/modems/{modem_id}/pin",
+        tags=["Modems"],
+        summary="Unlock a SIM",
+        responses=MODEM_STATE_RESPONSES,
+    )
+    async def pin(modem_id: ModemID, body: Pin):
+        """Submit the SIM PIN. Saving it requires a successful unlock and a usable SIM identity."""
         return await gateway.act(modem_id, "http", "unlock", pin=body.pin, remember=body.remember)
 
-    @app.delete("/v1/modems/{modem_id}/pin")
-    async def forget_pin(modem_id: str):
+    @app.delete(
+        "/v1/modems/{modem_id}/pin",
+        tags=["Modems"],
+        summary="Forget a saved SIM PIN",
+        responses=MODEM_STATE_RESPONSES,
+    )
+    async def forget_pin(modem_id: ModemID):
+        """Remove the stored PIN for the current SIM and return the modem state."""
         return await gateway.act(modem_id, "http", "forget_pin")
 
-    @app.post("/v1/modems/{modem_id}/calls")
-    async def dial(modem_id: str, body: Phone):
+    @app.post(
+        "/v1/modems/{modem_id}/calls",
+        tags=["Voice"],
+        summary="Place a call",
+        responses=MODEM_STATE_RESPONSES,
+    )
+    async def dial(modem_id: ModemID, body: Phone):
+        """Dial a phone number on a modem with voice support."""
         return await gateway.act(modem_id, "http", "dial", number=body.number)
 
-    @app.post("/v1/modems/{modem_id}/calls/answer")
-    async def answer(modem_id: str):
+    @app.post(
+        "/v1/modems/{modem_id}/calls/answer",
+        tags=["Voice"],
+        summary="Answer an incoming call",
+        responses=MODEM_STATE_RESPONSES,
+    )
+    async def answer(modem_id: ModemID):
+        """Answer the ringing call. Send Content-Length: 0 when the request has no body."""
         return await gateway.act(modem_id, "http", "answer")
 
-    @app.delete("/v1/modems/{modem_id}/calls/current")
-    async def hangup(modem_id: str):
+    @app.delete(
+        "/v1/modems/{modem_id}/calls/current",
+        tags=["Voice"],
+        summary="Hang up a call",
+        responses=MODEM_STATE_RESPONSES,
+    )
+    async def hangup(modem_id: ModemID):
+        """End the current call and return the modem state."""
         return await gateway.act(modem_id, "http", "hangup")
 
-    @app.post("/v1/modems/{modem_id}/audio")
-    async def play(modem_id: str, body: Clip):
+    @app.post(
+        "/v1/modems/{modem_id}/audio",
+        tags=["Voice"],
+        summary="Play a WAV in a call",
+        responses=MODEM_STATE_RESPONSES,
+    )
+    async def play(modem_id: ModemID, body: Clip):
+        """Play a clip into the active call on a modem with call audio support."""
         return await gateway.act(modem_id, "http", "play_audio", wav=body.wav)
 
-    @app.delete("/v1/modems/{modem_id}/audio")
-    async def stop_audio(modem_id: str):
+    @app.delete(
+        "/v1/modems/{modem_id}/audio",
+        tags=["Voice"],
+        summary="Stop WAV playback",
+        responses=MODEM_STATE_RESPONSES,
+    )
+    async def stop_audio(modem_id: ModemID):
+        """Stop the active clip and return the modem state."""
         return await gateway.act(modem_id, "http", "stop_audio")
 
-    @app.get("/v1/modems/{modem_id}/audio")
-    async def capture(modem_id: str, seconds: Annotated[int, Query(ge=1, le=10)] = 5):
+    @app.get(
+        "/v1/modems/{modem_id}/audio",
+        tags=["Voice"],
+        summary="Capture recent caller audio",
+        responses=success(AudioCapture) | {code: MODEM_RESPONSES[code] for code in (404, 409)},
+    )
+    async def capture(
+        modem_id: ModemID,
+        seconds: Annotated[
+            int, Query(ge=1, le=10, description="Seconds of recent caller audio.")
+        ] = 5,
+    ):
+        """Return recent caller audio as a base64 WAV from the in-memory call buffer."""
         return {
             "wav": gateway.modem(modem_id).media_required().recent(seconds),
             "format": "audio/wav",
         }
 
-    @app.post("/v1/modems/{modem_id}/at")
-    async def at(modem_id: str, body: Command):
+    @app.post(
+        "/v1/modems/{modem_id}/at",
+        tags=["Modems"],
+        summary="Run an AT command",
+        responses=MODEM_RESPONSES | success(AtReply),
+    )
+    async def at(modem_id: ModemID, body: Command):
+        """Run one allowed command. Raw writes require MODEMBOX_ALLOW_RAW_AT and are disabled during calls."""
         return await gateway.act(modem_id, "http", "at", command=body.command)
 
     @app.websocket("/v1/events")

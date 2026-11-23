@@ -3,6 +3,7 @@
 > Control USB cellular modems over a web console, REST, WebSockets, and MCP.
 
 - [API](https://psyb0t.github.io/docker-modembox/api/): Look up ModemBox REST endpoints, authentication, live modem events, and WebSocket call audio frames.
+- [OpenAPI JSON](https://psyb0t.github.io/docker-modembox/reference/openapi.json): Machine-readable REST operations, request schemas, and response schemas.
 - [Browser console](https://psyb0t.github.io/docker-modembox/console/): Unlock a SIM, send and receive SMS, operate calls, and check live activity in the browser.
 - [Devices and configuration](https://psyb0t.github.io/docker-modembox/devices/): Check USB modem discovery and capabilities, set runtime options, and manage the SIM PIN and modem storage.
 - [Install ModemBox](https://psyb0t.github.io/docker-modembox/install/): Install ModemBox with Docker, manage image versions and upgrades, and preserve the SQLite data and SIM PIN key.
